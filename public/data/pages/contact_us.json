@@ -1,0 +1,40 @@
+{
+  "pageTitle": "Get in Touch",
+  "pageSubtitle": "We'd love to hear from you! Reach out via the details below or send us a message using the form.",
+  "siteNotice": "Free UK Delivery on orders over £50",
+  "mapImagePath": "assets/images/map_placeholder_london.png",
+  "contactDetails": [
+    {
+      "id": "cd01",
+      "type": "detail",
+      "title": "Phone",
+      "subtitle": "01666 567890",
+      "iconName": "phoneAlt",
+      "link": "tel:+441666567890"
+    },
+    {
+      "id": "cd02",
+      "type": "detail",
+      "title": "Email",
+      "subtitle": "sales@luxuryhampers.com",
+      "iconName": "solidEnvelope",
+      "link": "mailto:sales@luxuryhampers.com"
+    },
+    {
+      "id": "cd03",
+      "type": "detail",
+      "title": "Address",
+      "subtitle": "123 Rushdene Lane, South Kensington, London, SW7 1DT",
+      "iconName": "mapMarkerAlt",
+      "link": null
+    }
+  ],
+  "openingHours": {
+    "title": "Opening Hours",
+    "hours": [
+      "Monday - Friday: 9:00 AM - 5:00 PM",
+      "Saturday: 10:00 AM - 4:00 PM",
+      "Sunday: Closed"
+    ]
+  }
+}
