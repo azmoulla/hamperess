@@ -558,10 +558,18 @@ async function fetchData(url) {
 }
 
 async function fetchInitialUserData() {
-    userOrders = await fetchData('data/orders.json') || [];
-    userAddresses = await fetchData('data/addresses.json') || [];
-    userReturns = await fetchData('data/returns.json') || [];
+    // This function used to fetch placeholder JSON files that no longer exist.
+    // Now, we simply initialize the user-specific data as empty arrays.
+    // In the future, we will expand this to fetch real data from Firestore
+    // for a logged-in user.
+    userOrders = [];
+    userAddresses = [];
+    userReturns = [];
+    console.log("Initialized user data as empty.");
+    // By returning a resolved promise, we ensure other startup tasks can continue.
+    return Promise.resolve();
 }
+
 
 async function fetchProducts() {
     console.log("fetchProducts: Fetching products data from backend API.");
