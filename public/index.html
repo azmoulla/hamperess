@@ -15,6 +15,8 @@
 </head>
 <body>
 
+    <!-- ... (The rest of your body content from header-contact-bar to the end of the quick-view-modal) ... -->
+    <!-- The existing body content remains exactly the same. -->
     <div class="header-contact-bar">
         <span>Free UK Delivery on orders over £50</span>
         <div class="contact-details">
@@ -148,7 +150,8 @@
             <div id="footer-bottom"></div>
         </footer>
         
-    </div> <div id="cart-overlay" class="cart-overlay"></div>
+    </div> 
+    <div id="cart-overlay" class="cart-overlay"></div>
     <aside id="side-cart">
         <div class="cart-header"><h3>My Basket</h3><button id="cart-close-btn">&times;</button></div>
         <div id="cart-items"><p>Your basket is empty.</p></div>
@@ -202,17 +205,16 @@
                 </div>
         </div>
     </div>
- <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    
+    <!-- CHANGE: ADD FIREBASE SDK SCRIPTS -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
-
-    <script src="auth.js"></script>
-    <script src="wishlist.js"></script>
-    <script src="app.js"></script>
-
+    
     <script src="auth.js"></script>
     <script src="wishlist.js"></script>
     <script src="app.js"></script>
 
 </body>
 </html>
+

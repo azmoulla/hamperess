@@ -1,109 +1,123 @@
 // FILE: auth.js
-// This file is now powered by Firebase Authentication for secure, real-time user management.
+// This file replaces the localStorage-based authentication with a secure,
+// live connection to Firebase Authentication.
 
 const auth = (() => {
-    // --- IMPORTANT ---
+    // --- IMPORTANT ACTION REQUIRED ---
     // PASTE YOUR FIREBASE CONFIG OBJECT HERE
-    // You copied this from the Firebase console in Step 1.
     const firebaseConfig = {
-      apiKey: "AIzaSyBzU9YCpen0fJ12eGSnLeQGXsavSa9kX3w", // Replace with your actual apiKey
-      authDomain: "luxury-hampers-app.firebaseapp.com", // Replace
-      projectId: "luxury-hampers-app", // Replace
-      storageBucket: "luxury-hampers-app.firebasestorage.app", // Replace
-      messagingSenderId: "314612428903", // Replace
-      appId: "1:314612428903:web:39c34c1d63e0aa818124c2",// Replace
-      measurementId: "G-LXPLK738BM"
-    };
+    apiKey: "AIzaSyBzU9YCpen0fJ12eGSnLeQGXsavSa9kX3w",
+    authDomain: "luxury-hampers-app.firebaseapp.com",
+    projectId: "luxury-hampers-app",
+    storageBucket: "luxury-hampers-app.firebasestorage.app",
+    messagingSenderId: "314612428903",
+    appId: "1:314612428903:web:39c34c1d63e0aa818124c2",
+    measurementId: "G-LXPLK738BM"
+  };
+
 
     // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const fbAuth = firebase.auth();
+    const db = firebase.firestore();
+
     let currentUser = null;
 
     // Listen for real-time authentication changes
     fbAuth.onAuthStateChanged(user => {
         if (user) {
-            // User is signed in. We can create a simplified object for our app's use.
-            currentUser = {
-                uid: user.uid,
-                email: user.email,
-                name: user.displayName || user.email.split('@')[0] // Use display name or derive from email
-            };
-            console.log("Firebase Auth: User is signed in.", currentUser);
+            // User is signed in, get their profile from Firestore
+            db.collection('users').doc(user.uid).get().then(doc => {
+                if (doc.exists) {
+                    currentUser = { uid: user.uid, email: user.email, ...doc.data() };
+                } else {
+                    // This case handles users who signed up but their profile wasn't created yet
+                    currentUser = { uid: user.uid, email: user.email, name: user.displayName || user.email };
+                }
+                console.log("Firebase Auth: User is signed in:", currentUser.name);
+                window.dispatchEvent(new Event('authchange'));
+            });
         } else {
-            // User is signed out.
+            // User is signed out
             currentUser = null;
             console.log("Firebase Auth: User is signed out.");
+            window.dispatchEvent(new Event('authchange'));
         }
-        // Notify the rest of the app that the auth state has changed
-        window.dispatchEvent(new Event('authchange'));
     });
 
     return {
+        // Registers a new user with email/password
         async register(name, email, password) {
             try {
                 const userCredential = await fbAuth.createUserWithEmailAndPassword(email, password);
-                // After creation, update the user's profile with their name
-                await userCredential.user.updateProfile({ displayName: name });
-                // Manually update our local currentUser object after profile update
-                currentUser = {
-                    uid: userCredential.user.uid,
-                    email: userCredential.user.email,
-                    name: name
-                };
-                return true;
+                const user = userCredential.user;
+
+                // Set the user's display name in Firebase Auth
+                await user.updateProfile({ displayName: name });
+
+                // Create a user profile document in Firestore
+                await db.collection('users').doc(user.uid).set({
+                    name: name,
+                    email: email,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                return { success: true };
             } catch (error) {
                 console.error("Firebase Registration Error:", error);
-                showConfirmationModal(error.message); // Show the actual Firebase error
-                return false;
+                return { success: false, message: error.message };
             }
         },
 
+        // Logs in a user
         async login(email, password) {
             try {
                 await fbAuth.signInWithEmailAndPassword(email, password);
-                return true;
+                return { success: true };
             } catch (error) {
                 console.error("Firebase Login Error:", error);
-                showConfirmationModal(error.message); // Show the actual Firebase error
-                return false;
+                return { success: false, message: error.message };
             }
         },
 
+        // Logs out the current user
         logout() {
             fbAuth.signOut();
         },
 
+        // Checks if a user is currently logged in
         isLoggedIn() {
             return currentUser !== null;
         },
 
+        // Gets the current user's name
         getUserName() {
             return currentUser ? currentUser.name : '';
         },
-
-        getUserEmail() {
-            return currentUser ? currentUser.email : '';
-        },
-
+        
+        // Gets the current user object
         getCurrentUser() {
             return currentUser;
         },
 
+        // Updates user details in Firestore
         async updateUser(details) {
-            if (!fbAuth.currentUser) return false;
+            if (!this.isLoggedIn()) return { success: false, message: "User not logged in." };
+            
             try {
-                await fbAuth.currentUser.updateProfile({ displayName: details.name });
-                await fbAuth.currentUser.updateEmail(details.email);
-                // Manually update local state after successful update
-                 currentUser.name = details.name;
-                 currentUser.email = details.email;
+                const userDocRef = db.collection('users').doc(currentUser.uid);
+                await userDocRef.update({
+                    name: details.name
+                    // Note: Email updates require re-authentication and are more complex.
+                    // We will only update the name for now.
+                });
+                // Optimistically update local user object
+                currentUser.name = details.name;
                 window.dispatchEvent(new Event('authchange'));
-                return true;
-            } catch(error) {
-                 console.error("Firebase Update User Error:", error);
-                 showConfirmationModal(error.message);
-                 return false;
+                return { success: true };
+            } catch (error) {
+                console.error("Firestore Update Error:", error);
+                return { success: false, message: error.message };
             }
         }
     };
