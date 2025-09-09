@@ -1,4 +1,4 @@
-const CACHE_NAME = 'luxury-hampers-cache-v24'; // Increment version for update
+const CACHE_NAME = 'luxury-hampers-cache-v30'; // Increment version for update
 
 const urlsToCache = [
     '/',
@@ -8,16 +8,11 @@ const urlsToCache = [
     '/auth.js',
     '/manifest.json',
     // Data files
-    '/data/products.json',
+    
     '/data/occasions.json',
     '/data/Header_nav.json',
-    '/data/custom_hamper_components.json',
+  
     '/data/footer_info.json',
-    
-    
-    '/data/orders.json',
-    '/data/addresses.json',
-    '/data/returns.json', // <-- ADDED
     // Page content files
     '/data/pages/about_us.json',
     '/data/pages/contact_us.json',

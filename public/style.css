@@ -3098,3 +3098,38 @@ body.product-list-active .search-container {
 .return-status.expired { 
     background: #7f8c8d; /* A neutral gray color */
 }
+/* --- PASSWORD STRENGTH INDICATOR --- */
+/* Password Strength Bar Styles */
+.password-strength-container {
+    height: 6px;
+    background-color: #e0e0e0;
+    border-radius: 3px;
+    margin-top: 0.5rem;
+    overflow: hidden;
+}
+
+.strength-bar {
+    height: 100%;
+    width: 0;
+    transition: width 0.3s ease-in-out, background-color 0.3s;
+}
+.strength-bar.weak {
+    width: 33%;
+    background-color: #e74c3c; /* Red color */
+}
+
+.strength-bar.medium {
+    width: 66%;
+    background-color: #f39c12; /* Orange color */
+}
+
+.strength-bar.strong {
+    width: 100%;
+    background-color: #27ae60; /* Green color */
+}
+/* Add this to the end of your stylesheet */
+.return-trigger-note {
+    text-align: center;
+    padding: 1.5rem 0 0.5rem 0;
+    font-size: 0.9rem;
+}

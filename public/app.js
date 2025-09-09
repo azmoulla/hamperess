@@ -17,7 +17,320 @@ if ('serviceWorker' in navigator) {
             .catch(error => console.log('ServiceWorker registration failed: ', error));
     });
 }
+const CLICK_HANDLERS = [
 
+   
+  
+
+    // --- MODAL & OVERLAY HANDLERS (Consolidated) ---
+    {
+        selector: '#quick-view-close-btn, #quick-view-modal-overlay, #cart-close-btn, #cart-overlay, #mobile-nav-close, #mobile-nav-overlay',
+        handler: (target, e) => {
+            if (e.target !== target) return false; // Only trigger on direct overlay clicks
+            closeQuickViewModal();
+            closeCart();
+            closeMobileMenu();
+        }
+    },
+
+    {
+    selector: '.product-card .wishlist-btn',
+    handler: (target, e) => {
+        e.preventDefault();
+        e.stopPropagation(); // Stop the click from navigating
+        wishlist.toggleWishlist(target.dataset.productId);
+        return true;
+    }
+},
+    // --- QUICK VIEW MODAL BUTTONS ---
+    {
+        selector: '.quick-view-btn',
+        handler: (target) => openQuickViewModal(target.dataset.productId)
+    },
+    {
+        selector: '.view-full-details-link',
+        handler: (target, e) => {
+            e.preventDefault();
+            closeQuickViewModal();
+            showProductDetail(target.dataset.productId);
+        }
+    },
+
+    // --- ADD TO BASKET (Upgraded to be Context-Aware) ---
+   // STEP 3: REPLACE IT WITH THIS
+{
+    selector: '.add-to-basket-btn',
+    handler: (target, e) => {
+        // First, check if the button is on a product card.
+        if (target.closest('.product-card')) {
+            e.preventDefault();
+            e.stopPropagation();
+            addToCart(target.dataset.productId, 1);
+            return true; // This is crucial to stop the navigation.
+        }
+        
+        // If not, handle the logic for the quick-view modal as before.
+        const quickViewModal = target.closest('#quick-view-modal');
+        let quantity = 1;
+        if (quickViewModal) {
+            const qtyInput = quickViewModal.querySelector('#quick-view-quantity');
+            if (qtyInput) quantity = parseInt(qtyInput.value, 10);
+            closeQuickViewModal();
+        }
+        addToCart(target.dataset.productId, quantity);
+    }
+},
+    {
+        selector: '.add-to-basket-btn-detail',
+        handler: (target) => {
+            const qtyInput = document.querySelector('#page-detail .quantity-input');
+            addToCart(target.dataset.productId, qtyInput ? parseInt(qtyInput.value, 10) : 1);
+        }
+    },
+
+    // --- QUANTITY BUTTONS (Upgraded to be Context-Aware) ---
+    {
+        selector: '.decrease-qty',
+        handler: (target) => {
+            const quickViewModal = target.closest('#quick-view-modal');
+            if (quickViewModal) {
+                const qtyInput = quickViewModal.querySelector('#quick-view-quantity');
+                if (qtyInput && parseInt(qtyInput.value, 10) > 1) {
+                    qtyInput.value = parseInt(qtyInput.value, 10) - 1;
+                }
+            } else {
+                changeQuantity(target.dataset.id, -1);
+            }
+        }
+    },
+    // THIS IS THE NEW CODE TO ADD
+{
+    selector: '.decrease-component-qty',
+    handler: (target) => {
+        changeComponentQuantity(target.dataset.cartItemId, target.dataset.componentId, -1);
+    }
+},
+{
+    selector: '.increase-component-qty',
+    handler: (target) => {
+        changeComponentQuantity(target.dataset.cartItemId, target.dataset.componentId, 1);
+    }
+},
+    {
+        selector: '.increase-qty',
+        handler: (target) => {
+            const quickViewModal = target.closest('#quick-view-modal');
+            if (quickViewModal) {
+                const qtyInput = quickViewModal.querySelector('#quick-view-quantity');
+                if (qtyInput) {
+                    const maxQty = parseInt(qtyInput.max, 10);
+                    if (parseInt(qtyInput.value, 10) < maxQty) {
+                        qtyInput.value = parseInt(qtyInput.value, 10) + 1;
+                    }
+                }
+            } else {
+                changeQuantity(target.dataset.id, 1);
+            }
+        }
+    },
+
+    // --- NAVIGATION & PAGE ACTIONS ---
+    {
+        selector: '.nav-links-desktop a, .mobile-nav-links a, .footer-column a',
+        handler: (target, e) => {
+            if (target.dataset.argument === undefined) return false;
+            e.preventDefault();
+            handleMenuClick({ argument: target.dataset.argument, target: target.dataset.target, title: target.textContent });
+            closeMobileMenu();
+            return true;
+        }
+    },
+    {
+        selector: 'a[data-target]',
+        handler: (target, e) => {
+            const pageTarget = target.dataset.target;
+            if (pageTarget && pageTarget.startsWith('/') && pageTarget !== '/product-listing') {
+                e.preventDefault();
+                let pageName = pageTarget.replace('/', '').replace(/-/g, '_');
+                if (pageName === 'terms_conditions') pageName = 'terms_and_conditions';
+                fetchAndDisplayStaticPage(pageName);
+                return true;
+            }
+            return false;
+        }
+    },
+   
+    { selector: '#header-title', handler: showAllProducts },
+    { selector: '#hero-shop-now-btn', handler: () => document.getElementById('products-section').scrollIntoView({ behavior: 'smooth' }) },
+    { selector: '#secondary-hero-btn', handler: () => { selectedCustomItems = []; fetchCustomHamperItems(); } },
+    {
+        selector: '.occasion-card',
+        handler: (target) => {
+            currentCategoryFilter = target.dataset.navigationArgument;
+            currentTagFilter = null;
+            document.getElementById('search-input').value = '';
+            showPage('list');
+            updateProductView();
+        }
+    },
+
+    // --- CART & CHECKOUT ACTIONS ---
+    { selector: '.cart-icon-wrapper', handler: openCart },
+    { selector: '.cart-item-remove-btn', handler: (target) => removeFromCart(target.dataset.id) },
+   {
+    selector: '#go-to-checkout-btn',
+    handler: () => {
+        closeCart();
+        if (auth.isLoggedIn()) {
+            router.navigate('/checkout');
+        } else {
+            // Remember where the user wants to go after logging in.
+            postLoginRedirectPath = '/checkout';
+            router.navigate('/login');
+        }
+    }
+},
+      {
+        selector: '#place-order-btn',
+        handler: (target, e) => {
+            // Prevent the default button behavior
+            e.preventDefault(); 
+            // Now, call the placeOrder function to handle the order logic
+            placeOrder();
+        }
+    },
+    {
+        selector: '#cart-discount-form, #checkout-discount-form',
+        handler: (target, e) => {
+            e.preventDefault();
+            const source = target.id.startsWith('cart') ? 'cart' : 'checkout';
+            const input = document.getElementById(`${source}-discount-code`);
+            if (input.value) applyDiscount(input.value, source);
+        }
+    },
+
+    // --- MY ACCOUNT & AUTH ---
+    { selector: '.account-icon-wrapper, .mobile-account-link, #mobile-menu-account-link', handler: () => { renderAccountPage(); closeMobileMenu(); } },
+   
+    { selector: '#show-register', handler: (target, e) => { e.preventDefault(); renderRegisterPage(); } },
+    { selector: '#show-login', handler: (target, e) => { e.preventDefault(); renderLoginPage(); } },
+    { 
+    selector: '#logout-btn', 
+    handler: () => { 
+        auth.logout(); 
+        showAllProducts(); 
+    } 
+},
+    { selector: '#orders-back-to-account, #addresses-back-to-account, #returns-back-to-account, #back-to-account, #wishlist-back-to-account', handler: renderAccountPage },
+    { selector: '.view-order-details', handler: (target) => renderOrderDetailPage(target.dataset.orderId) },
+    { selector: '#back-to-orders', handler: renderMyOrdersPage },
+    { selector: '#add-new-address-main', handler: () => { addressFormReturnPath = 'account'; renderAddressForm(); } },
+    {
+        selector: '#back-to-addresses',
+        handler: () => {
+            if (addressFormReturnPath === 'checkout') { displayCheckoutPage(); } else { renderMyAddressesPage(); }
+            addressFormReturnPath = null;
+        }
+    },
+    { selector: '.edit-address', handler: (target) => renderAddressForm(userAddresses.find(addr => addr.id === target.dataset.addressId)) },
+    { 
+        selector: '.delete-address', 
+        handler: (target) => {
+            const addressId = target.dataset.addressId;
+            showConfirmationModal('Are you sure you want to delete this address?', async () => {
+                try {
+                    await fetchWithAuth(`/api/addresses?addressId=${addressId}`, { method: 'DELETE' });
+                    // Refresh the list from the server after deleting
+                    userAddresses = userAddresses.filter(addr => addr.id !== addressId);
+                    renderMyAddressesPage();
+                } catch (error) {
+                    showConfirmationModal(`Error deleting address: ${error.message}`);
+                }
+            });
+        }
+    },
+    { 
+        selector: '.set-default-address', 
+        handler: async (target) => {
+            const addressId = target.dataset.addressId;
+            const addressToUpdate = userAddresses.find(addr => addr.id === addressId);
+            if (!addressToUpdate) return;
+            
+            try {
+                // Set the isDefault flag to true and send the update
+                await fetchWithAuth('/api/addresses', {
+                    method: 'PUT',
+                    body: JSON.stringify({ addressId, ...addressToUpdate, isDefault: true })
+                });
+                // Refresh the list from the server to get the updated states
+                userAddresses = await fetchWithAuth('/api/addresses');
+                renderMyAddressesPage();
+            } catch (error) {
+                showConfirmationModal(`Error setting default address: ${error.message}`);
+            }
+        }
+    },
+
+
+    // --- MISC & FALLBACKS ---
+    { selector: '#mobile-menu-toggle', handler: openMobileMenu },
+    { selector: '#clear-search-btn', handler: showAllProducts },
+    { selector: '#back-to-list-detail', handler: showAllProducts },
+    {
+        selector: '.edit-hamper-btn',
+        handler: (target) => {
+            const cartItem = cart.find(item => item.id === target.dataset.id);
+            if (cartItem?.isCustom) {
+                closeCart();
+                editingCartItemId = target.dataset.id;
+                selectedCustomItems = [...cartItem.contents];
+                displayCreateYourOwnPage();
+            }
+        }
+    },
+    {
+        selector: '.wishlist-btn',
+        handler: (target) => wishlist.toggleWishlist(target.dataset.productId)
+    },
+    
+// THIS IS THE NEW, CORRECTED CODE
+{
+    selector: '.wishlist-toggle-btn',
+    handler: (target) => {
+        wishlist.toggleWishlist(target.dataset.productId);
+    }
+},
+
+
+    // This is the handler for the image carousel inside the product card
+    {
+        selector: '.product-image-container .carousel-arrow, .product-image-container .dot',
+        handler: (target, e) => {
+            e.stopPropagation();
+            const imageContainer = target.closest('.product-image-container');
+            if (!imageContainer) return;
+            updateCarousel(imageContainer, target.matches('.carousel-arrow')
+                ? parseInt(imageContainer.dataset.currentIndex, 10) + parseInt(target.dataset.direction, 10)
+                : parseInt(target.dataset.index, 10));
+        }
+    },
+    // This is the handler for the image carousel inside the product detail page
+    {
+        selector: '.detail-image-container .carousel-arrow, .detail-image-container .dot',
+        handler: (target, e) => {
+            e.stopPropagation();
+            const imageContainer = target.closest('.detail-image-container');
+            let currentIndex = parseInt(imageContainer.dataset.currentIndex, 10);
+            let newIndex = currentIndex;
+            if (target.matches('.carousel-arrow')) {
+                newIndex = currentIndex + parseInt(target.dataset.direction, 10);
+            } else if (target.matches('.dot')) {
+                newIndex = parseInt(target.dataset.index, 10);
+            }
+            updateCarousel(imageContainer, newIndex);
+        }
+    },
+];
 // --- GLOBAL STATE MANAGEMENT ---
 // ... (your other variables)
 // Add these with your other global variables
@@ -37,6 +350,8 @@ let confirmCallback = null;
 let currentCategoryFilter = 'all'; // New: To store the active category filter from menu/occasions
 let currentTagFilter = null; // New: To store the active tag filter (e.g., 'BESTSELLER', 'SALE')
 let lastScrollTop = 0; // For hide-on-scroll header
+let isInitialAuthCheck = true; // This flag will help the app know when it's running for the very first time on a page load.
+let postLoginRedirectPath = null;
 
 // --- DOM ELEMENT CONSTANTS ---
 const headerTitle = document.getElementById('header-title');
@@ -93,37 +408,218 @@ const pageWishlist = document.getElementById('page-wishlist');
 const quickViewModalOverlay = document.getElementById('quick-view-modal-overlay');
 const quickViewContent = document.getElementById("quick-view-content");
 
+// ADD THIS HELPER FUNCTION to your public/app.js file
+
+function checkPasswordStrength(password) {
+    let strength = 0;
+    let feedback = '';
+
+    if (password.length >= 8) {
+        strength++;
+    }
+    if (password.match(/[0-9]/)) { // Contains a number
+        strength++;
+    }
+    if (password.match(/[a-z]/) && password.match(/[A-Z]/)) { // Contains both lowercase and uppercase
+        strength++;
+    }
+    if (password.match(/[^A-Za-z0-9]/)) { // Contains a special character
+        strength++;
+    }
+
+    switch (strength) {
+        case 0:
+        case 1:
+            feedback = 'Weak';
+            break;
+        case 2:
+            feedback = 'Medium';
+            break;
+        case 3:
+        case 4:
+            feedback = 'Strong';
+            break;
+        default:
+            feedback = '';
+    }
+    return { score: strength, feedback: feedback };
+
+    
+
+
+
+}
+
+// ----------------------------------------------------------------- //
+// -------------------- KIT: ROUTER IMPLEMENTATION ----------------- //
+// ----------------------------------------------------------------- //
+
+// In app.js, replace your entire `router` object with this one.
+
+// In app.js
+
+const router = {
+    routes: {},
+    currentPath: '',
+    init() {
+        window.addEventListener('hashchange', () => this.handleRouteChange());
+        window.addEventListener('load', () => this.handleRouteChange());
+    },
+    addRoute(path, handler) { this.routes[path] = handler; },
+    handleRouteChange() {
+        const path = (window.location.hash.slice(1) || '/').split('?')[0];
+        this.currentPath = path;
+        this.loadRoute(path);
+    },
+    loadRoute(path) {
+        // Dynamic route matching
+        for (const routePath in this.routes) {
+            if (routePath.includes(':')) {
+                const routeParts = routePath.split('/');
+                const pathParts = path.split('/');
+                if (routeParts.length === pathParts.length) {
+                    const params = {};
+                    const isMatch = routeParts.every((part, i) => {
+                        if (part.startsWith(':')) {
+                            params[part.slice(1)] = decodeURIComponent(pathParts[i]);
+                            return true;
+                        }
+                        return part === pathParts[i];
+                    });
+                    if (isMatch) {
+                        this.routes[routePath](params);
+                        return;
+                    }
+                }
+            }
+        }
+        // Static route matching
+        if (this.routes[path]) {
+            this.routes[path]();
+        } else {
+            this.navigate('/');
+        }
+    },
+    navigate(path) {
+        if (window.location.hash.slice(1) !== path) window.location.hash = path;
+    }
+};
+
+function defineRoutes() {
+    router.addRoute('/', renderHomePage);
+    router.addRoute('/category/:name', params => handleMenuClick({ argument: params.name }));
+    router.addRoute('/create-your-own', () => handleMenuClick({ target: '/create-your-own' }));
+    router.addRoute('/products/:slug', params => showProductDetail(params.slug));
+    router.addRoute('/checkout', displayCheckoutPage);
+    router.addRoute('/login', renderLoginPage);
+    router.addRoute('/register', renderRegisterPage);
+    router.addRoute('/account', renderAccountPage);
+    router.addRoute('/account/orders', renderMyOrdersPage);
+    router.addRoute('/account/orders/:id', params => renderOrderDetailPage(params.id));
+    router.addRoute('/account/addresses', renderMyAddressesPage);
+    router.addRoute('/account/addresses/new', () => { addressFormReturnPath = '/account/addresses'; renderAddressForm(); });
+    router.addRoute('/account/addresses/edit/:id', params => {
+        addressFormReturnPath = '/account/addresses';
+        const address = userAddresses.find(a => a.id === params.id);
+        renderAddressForm(address);
+    });
+    router.addRoute('/account/settings', renderAccountSettingsPage);
+    router.addRoute('/account/wishlist', renderWishlistPage);
+    router.addRoute('/account/returns', renderMyReturnsPage);
+    router.addRoute('/contact-us', () => fetchAndDisplayStaticPage('contact_us'));
+    // ... add other static routes as needed
+}
+
+// In app.js, near your other router functions
+
+function createSlug(text) {
+  if (!text) return '';
+  return text.toString().toLowerCase()
+    .replace(/\s+/g, '-')           // Replace spaces with -
+    .replace(/&/g, '-and-')         // Replace & with 'and'
+    .replace(/[^\w\-]+/g, '')       // Remove all non-word chars
+    .replace(/\-\-+/g, '-');        // Replace multiple - with single -
+}
 // -------------------------------------------------------------------- //
 // -------------------- KIT: INITIALIZATION & EVENTS -------------------- //
 // -------------------------------------------------------------------- //
 
-document.addEventListener('DOMContentLoaded', () => {
-    console.log("DOMContentLoaded: Starting initial data fetch tasks.");
-    const startupTasks = [
-        fetchProducts(),
-         fetchDiscounts(),
-        fetchMenu(),
-        fetchFooterInfo(),
-        fetchOccasions(),
-        fetchInitialUserData(),
-        fetchFeatures(),
-        fetchTestimonials(),
-        fetchConfig()
-    ];
+// In app.js
 
-    Promise.allSettled(startupTasks)
-        .then(() => {
-            console.log("Initial data loading tasks have completed.");
-            setupEventListeners();
-            setupSwipeListeners(document.body);
-            updateHeaderIcons();
-            loadCart();
-            showAllProducts();
-            manageFilterLocation(); // Initial check for filter location
-        });
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("DOM content loaded. Initializing app...");
+
+    // 1. Setup core UI and load cart from storage
+    setupEventListeners();
+    updateHeaderIcons();
+    loadCart();
+
+    // 2. Define all application routes FIRST
+    defineRoutes();
+
+    // 3. Initialize the router so it can handle the initial page load
+    router.init(); 
+
+    // 4. Start fetching all other data in the background
+    const startupTasks = [
+        fetchProducts(), fetchDiscounts(), fetchMenu(), fetchFooterInfo(),
+        fetchOccasions(), fetchFeatures(), fetchTestimonials(), fetchConfig()
+    ];
+    Promise.allSettled(startupTasks).then(() => {
+        console.log("Background data loading has completed.");
+    });
 });
 
-// Add this function with your other data fetching functions
+// It updates all visible wishlist icons without reloading the page.
+function updateAllWishlistIcons() {
+    const wishlistedIds = wishlist.getAllItemIds();
+    // Select all possible wishlist buttons on the page
+    const allWishlistButtons = document.querySelectorAll('.wishlist-btn, .wishlist-toggle-btn');
+
+    allWishlistButtons.forEach(button => {
+        const productId = button.dataset.productId;
+        const isWishlisted = wishlistedIds.includes(String(productId));
+
+        // For the small heart icons on product cards (in the main list or related products)
+        button.classList.toggle('favorited', isWishlisted);
+
+        // Specifically for the main "Save/Saved" button on the product detail page
+        if (button.classList.contains('wishlist-toggle-btn')) {
+            const buttonTextSpan = button.querySelector('span');
+            if (buttonTextSpan) {
+                buttonTextSpan.textContent = isWishlisted ? 'Saved' : 'Save';
+            }
+        }
+    });
+}
+
+
+
+// In app.js
+
+async function handleAuthStateChange() {
+    console.log("Authentication state changed.");
+    updateHeaderIcons();
+
+    if (auth.isLoggedIn()) {
+        // --- THIS IS THE FIX ---
+        // First, load the cart from localStorage. At this point, auth.js
+        // has already restored the user's saved cart to localStorage.
+        loadCart();
+        // --- END FIX ---
+        
+        // Then, fetch other user-specific data like orders and addresses.
+        await fetchInitialUserData();
+    } else {
+        // This part is for logging out, and it correctly loads the empty cart.
+        userAddresses = [];
+        userOrders = [];
+        userReturns = [];
+        loadCart(); 
+    }
+    
+    router.handleRouteChange();
+}
 async function fetchConfig() {
     console.log("fetchConfig: Fetching app configuration.");
     try {
@@ -179,14 +675,19 @@ function setupEventListeners() {
     document.body.addEventListener('click', handleGlobalClick);
     window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('resize', manageFilterLocation);
-    window.addEventListener('authchange', updateHeaderIcons);
+    window.addEventListener('authchange', handleAuthStateChange);
 // (Inside the setupEventListeners function in app.js)
+// THIS IS THE NEW, CORRECTED CODE
 window.addEventListener('wishlistChange', () => {
-    // Re-render the currently viewed products to update heart icons
+    // If on the main product list, re-render the grid.
     if (pageList.style.display !== 'none') {
         updateProductView();
     }
-    // If the wishlist page is visible, re-render it
+    // If on the product detail page, just update the icons without a disruptive re-render.
+    if (pageDetail.style.display !== 'none') {
+        updateAllWishlistIcons();
+    }
+    // If on the dedicated wishlist page, re-render it.
     if (document.getElementById('page-wishlist')?.style.display !== 'none') {
         renderWishlistPage();
     }
@@ -262,283 +763,110 @@ function manageFilterLocation() {
 }
 
 
-const CLICK_HANDLERS = [
-    // --- MODAL & OVERLAY HANDLERS (Consolidated) ---
-    {
-        selector: '#quick-view-close-btn, #quick-view-modal-overlay, #cart-close-btn, #cart-overlay, #mobile-nav-close, #mobile-nav-overlay',
-        handler: (target, e) => {
-            if (e.target !== target) return false; // Only trigger on direct overlay clicks
-            closeQuickViewModal();
-            closeCart();
-            closeMobileMenu();
-        }
-    },
-
-    // --- QUICK VIEW MODAL BUTTONS ---
-    {
-        selector: '.quick-view-btn',
-        handler: (target) => openQuickViewModal(target.dataset.productId)
-    },
-    {
-        selector: '.view-full-details-link',
-        handler: (target, e) => {
-            e.preventDefault();
-            closeQuickViewModal();
-            showProductDetail(target.dataset.productId);
-        }
-    },
-
-    // --- ADD TO BASKET (Upgraded to be Context-Aware) ---
-    {
-        selector: '.add-to-basket-btn',
-        handler: (target) => {
-            const quickViewModal = target.closest('#quick-view-modal');
-            let quantity = 1;
-
-            if (quickViewModal) {
-                const qtyInput = quickViewModal.querySelector('#quick-view-quantity');
-                if (qtyInput) quantity = parseInt(qtyInput.value, 10);
-                closeQuickViewModal();
-            }
-            addToCart(target.dataset.productId, quantity);
-        }
-    },
-    {
-        selector: '.add-to-basket-btn-detail',
-        handler: (target) => {
-            const qtyInput = document.querySelector('#page-detail .quantity-input');
-            addToCart(target.dataset.productId, qtyInput ? parseInt(qtyInput.value, 10) : 1);
-        }
-    },
-
-    // --- QUANTITY BUTTONS (Upgraded to be Context-Aware) ---
-    {
-        selector: '.decrease-qty',
-        handler: (target) => {
-            const quickViewModal = target.closest('#quick-view-modal');
-            if (quickViewModal) {
-                const qtyInput = quickViewModal.querySelector('#quick-view-quantity');
-                if (qtyInput && parseInt(qtyInput.value, 10) > 1) {
-                    qtyInput.value = parseInt(qtyInput.value, 10) - 1;
-                }
-            } else {
-                changeQuantity(target.dataset.id, -1);
-            }
-        }
-    },
-    {
-        selector: '.increase-qty',
-        handler: (target) => {
-            const quickViewModal = target.closest('#quick-view-modal');
-            if (quickViewModal) {
-                const qtyInput = quickViewModal.querySelector('#quick-view-quantity');
-                if (qtyInput) {
-                    const maxQty = parseInt(qtyInput.max, 10);
-                    if (parseInt(qtyInput.value, 10) < maxQty) {
-                        qtyInput.value = parseInt(qtyInput.value, 10) + 1;
-                    }
-                }
-            } else {
-                changeQuantity(target.dataset.id, 1);
-            }
-        }
-    },
-
-    // --- NAVIGATION & PAGE ACTIONS ---
-    {
-        selector: '.nav-links-desktop a, .mobile-nav-links a, .footer-column a',
-        handler: (target, e) => {
-            if (target.dataset.argument === undefined) return false;
-            e.preventDefault();
-            handleMenuClick({ argument: target.dataset.argument, target: target.dataset.target, title: target.textContent });
-            closeMobileMenu();
-            return true;
-        }
-    },
-    {
-        selector: 'a[data-target]',
-        handler: (target, e) => {
-            const pageTarget = target.dataset.target;
-            if (pageTarget && pageTarget.startsWith('/') && pageTarget !== '/product-listing') {
-                e.preventDefault();
-                let pageName = pageTarget.replace('/', '').replace(/-/g, '_');
-                if (pageName === 'terms_conditions') pageName = 'terms_and_conditions';
-                fetchAndDisplayStaticPage(pageName);
-                return true;
-            }
-            return false;
-        }
-    },
-    {
-        selector: '.product-card',
-        handler: (target, e) => {
-            if (e.target.closest('.add-to-basket-btn, .wishlist-btn, .carousel-arrow, .dot, .quick-view-btn')) return false;
-            showProductDetail(target.querySelector('.product-image-container').dataset.productId);
-        }
-    },
-    { selector: '#header-title', handler: showAllProducts },
-    { selector: '#hero-shop-now-btn', handler: () => document.getElementById('products-section').scrollIntoView({ behavior: 'smooth' }) },
-    { selector: '#secondary-hero-btn', handler: () => { selectedCustomItems = []; fetchCustomHamperItems(); } },
-    {
-        selector: '.occasion-card',
-        handler: (target) => {
-            currentCategoryFilter = target.dataset.navigationArgument;
-            currentTagFilter = null;
-            document.getElementById('search-input').value = '';
-            showPage('list');
-            updateProductView();
-        }
-    },
-
-    // --- CART & CHECKOUT ACTIONS ---
-    { selector: '.cart-icon-wrapper', handler: openCart },
-    { selector: '.cart-item-remove-btn', handler: (target) => removeFromCart(target.dataset.id) },
-    { selector: '#go-to-checkout-btn', handler: () => { closeCart(); if (auth.isLoggedIn()) { displayCheckoutPage(); } else { renderLoginPage(); } } },
-      {
-        selector: '#place-order-btn',
-        handler: (target, e) => {
-            // Prevent the default button behavior
-            e.preventDefault(); 
-            // Now, call the placeOrder function to handle the order logic
-            placeOrder();
-        }
-    },
-    {
-        selector: '#cart-discount-form, #checkout-discount-form',
-        handler: (target, e) => {
-            e.preventDefault();
-            const source = target.id.startsWith('cart') ? 'cart' : 'checkout';
-            const input = document.getElementById(`${source}-discount-code`);
-            if (input.value) applyDiscount(input.value, source);
-        }
-    },
-
-    // --- MY ACCOUNT & AUTH ---
-    { selector: '.account-icon-wrapper, .mobile-account-link, #mobile-menu-account-link', handler: () => { renderAccountPage(); closeMobileMenu(); } },
-    { selector: '.account-menu-item', handler: (target, e) => handleAccountMenuClicks(e) },
-    { selector: '#show-register', handler: (target, e) => { e.preventDefault(); renderRegisterPage(); } },
-    { selector: '#show-login', handler: (target, e) => { e.preventDefault(); renderLoginPage(); } },
-    { selector: '#logout-btn', handler: () => { auth.logout(); showAllProducts(); } },
-    { selector: '#orders-back-to-account, #addresses-back-to-account, #returns-back-to-account, #back-to-account, #wishlist-back-to-account', handler: renderAccountPage },
-    { selector: '.view-order-details', handler: (target) => renderOrderDetailPage(target.dataset.orderId) },
-    { selector: '#back-to-orders', handler: renderMyOrdersPage },
-    { selector: '#add-new-address-main', handler: () => { addressFormReturnPath = 'account'; renderAddressForm(); } },
-    {
-        selector: '#back-to-addresses',
-        handler: () => {
-            if (addressFormReturnPath === 'checkout') { displayCheckoutPage(); } else { renderMyAddressesPage(); }
-            addressFormReturnPath = null;
-        }
-    },
-    { selector: '.edit-address', handler: (target) => renderAddressForm(userAddresses.find(addr => addr.id === target.dataset.addressId)) },
-    { selector: '.delete-address', handler: (target) => showConfirmationModal('Are you sure you want to delete this address?', () => { userAddresses = userAddresses.filter(addr => addr.id !== target.dataset.addressId); renderMyAddressesPage(); }) },
-    { selector: '.set-default-address', handler: (target) => { userAddresses.forEach(addr => addr.isDefault = (addr.id === target.dataset.addressId)); renderMyAddressesPage(); } },
 
 
-    // --- MISC & FALLBACKS ---
-    { selector: '#mobile-menu-toggle', handler: openMobileMenu },
-    { selector: '#clear-search-btn', handler: showAllProducts },
-    { selector: '#back-to-list-detail', handler: showAllProducts },
-    {
-        selector: '.edit-hamper-btn',
-        handler: (target) => {
-            const cartItem = cart.find(item => item.id === target.dataset.id);
-            if (cartItem?.isCustom) {
-                closeCart();
-                editingCartItemId = target.dataset.id;
-                selectedCustomItems = [...cartItem.contents];
-                displayCreateYourOwnPage();
-            }
-        }
-    },
-    {
-        selector: '.wishlist-btn',
-        handler: (target) => wishlist.toggleWishlist(target.dataset.productId)
-    },
-    {
-        selector: '.wishlist-toggle-btn',
-        handler: (target) => {
-            wishlist.toggleWishlist(target.dataset.productId);
-            showProductDetail(target.dataset.productId);
-        }
-    },
-    {
-        selector: '#ribbon-view-basket-btn',
-        handler: () => {
-            closeAddedToCartSheet();
-            openCart();
-        }
-    },
-    // This is the handler for the image carousel inside the product card
-    {
-        selector: '.product-image-container .carousel-arrow, .product-image-container .dot',
-        handler: (target, e) => {
-            e.stopPropagation();
-            const imageContainer = target.closest('.product-image-container');
-            if (!imageContainer) return;
-            updateCarousel(imageContainer, target.matches('.carousel-arrow')
-                ? parseInt(imageContainer.dataset.currentIndex, 10) + parseInt(target.dataset.direction, 10)
-                : parseInt(target.dataset.index, 10));
-        }
-    },
-    // This is the handler for the image carousel inside the product detail page
-    {
-        selector: '.detail-image-container .carousel-arrow, .detail-image-container .dot',
-        handler: (target, e) => {
-            e.stopPropagation();
-            const imageContainer = target.closest('.detail-image-container');
-            let currentIndex = parseInt(imageContainer.dataset.currentIndex, 10);
-            let newIndex = currentIndex;
-            if (target.matches('.carousel-arrow')) {
-                newIndex = currentIndex + parseInt(target.dataset.direction, 10);
-            } else if (target.matches('.dot')) {
-                newIndex = parseInt(target.dataset.index, 10);
-            }
-            updateCarousel(imageContainer, newIndex);
-        }
-    },
-];
+// REPLACE your existing handleGlobalClick function with this.
+// In app.js
 
 function handleGlobalClick(e) {
-    // --- NEW: Handler for Related Products Arrows ---
-    const relatedArrow = e.target.closest('.related-products-arrow');
-    if (relatedArrow) {
-        const wrapper = relatedArrow.closest('.related-products-carousel-wrapper');
-        const scrollContainer = wrapper.querySelector('.related-products-list-container');
-        const cardWidth = 250 + 16; // Card width (250px) + gap (1rem = 16px)
-        const direction = parseInt(relatedArrow.dataset.direction, 10);
-        scrollContainer.scrollBy({ left: cardWidth * direction, behavior: 'smooth' });
-        return;
-    }
-    // --- END NEW ---
-
-    const decreaseComponentBtn = e.target.closest('.decrease-component-qty');
-    if (decreaseComponentBtn) {
-        changeComponentQuantity(decreaseComponentBtn.dataset.cartItemId, decreaseComponentBtn.dataset.componentId, -1);
-        return;
-    }
-
-    const increaseComponentBtn = e.target.closest('.increase-component-qty');
-    if (increaseComponentBtn) {
-        changeComponentQuantity(increaseComponentBtn.dataset.cartItemId, increaseComponentBtn.dataset.componentId, 1);
-        return;
-    }
-    
-    // The rest of your existing click handlers
+    // --- STEP 1: Check for specific button clicks first ---
+    // The CLICK_HANDLERS array will now contain special handlers for our buttons.
+    // If a handler is found and it returns `true`, we stop everything.
     for (const action of CLICK_HANDLERS) {
         const target = e.target.closest(action.selector);
         if (target) {
             const result = action.handler(target, e);
-            if (result !== false) {
-                return;
-            }
+            if (result !== false) return; // Stop if the handler was successful.
         }
     }
+
+    // --- STEP 2: If no specific button was clicked, handle it as a router navigation ---
+    const link = e.target.closest('a[href^="/#"]');
+    if (link) {
+        e.preventDefault();
+        // This corrected path ensures the leading '/' is always present
+       const path = link.hash.slice(1);
+        router.navigate(path);
+        if (document.getElementById('mobile-nav-overlay')?.classList.contains('active')) {
+            closeMobileMenu();
+        }
+    }
+}
+
+// In app.js
+
+function displayMenu(menuItems) {
+    const navLinksContainer = document.getElementById('nav-links');
+    const mobileNavLinks = document.getElementById('mobile-nav-links');
+    if (!navLinksContainer || !mobileNavLinks) return;
+
+    let mobileMenuHtml = `<a href="/#/account" class="mobile-nav-link-item account-link"><i class="fa-solid fa-user"></i> My Account / Log In</a>`;
+    let desktopMenuHtml = '';
+
+    menuItems.forEach(item => {
+        let link = '';
+        const saleClass = item.isSale ? 'sale-item' : '';
+
+        // This is the fix: check for the special target
+        if (item.target === '/create-your-own') {
+            link = '/#/create-your-own';
+        } else {
+            // Otherwise, create the standard category link
+            link = `/#/category/${item.argument}`;
+        }
+
+        desktopMenuHtml += `<a href="${link}" class="nav-links-desktop-item ${saleClass}">${item.title}</a>`;
+        mobileMenuHtml += `<a href="${link}" class="mobile-nav-link-item ${saleClass}">${item.title}</a>`;
+    });
+
+    navLinksContainer.innerHTML = desktopMenuHtml;
+    mobileNavLinks.innerHTML = mobileMenuHtml;
 }
 
 // ------------------------------------------------------------------ //
 // -------------------- KIT: DATA FETCHING (API) -------------------- //
 // ------------------------------------------------------------------ //
+
+
+
+async function fetchWithAuth(url, options = {}) {
+    const user = firebase.auth().currentUser;
+    if (!user) {
+        // If there's no user, we can't make an authenticated request.
+        // Depending on the use case, you might want to throw an error
+        // or return a specific status.
+        return Promise.reject(new Error("User not logged in"));
+    }
+
+    const token = await user.getIdToken();
+
+    const headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+    };
+
+    const config = {
+        ...options,
+        headers: headers
+    };
+
+    try {
+        const response = await fetch(url, config);
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+        // If the response has no content (like for a DELETE request), return success
+        if (response.status === 204 || response.headers.get("content-length") === "0") {
+            return { success: true };
+        }
+        return response.json();
+    } catch (error) {
+        console.error(`Authenticated fetch failed for ${url}:`, error);
+        throw error; // Re-throw the error to be caught by the calling function
+    }
+}
 
 // Add this with your other data fetching functions
 async function fetchDiscounts() {
@@ -557,16 +885,52 @@ async function fetchData(url) {
     }
 }
 
+// REPLACE this entire function in your public/app.js file
+
 async function fetchInitialUserData() {
-    // This function used to fetch placeholder JSON files that no longer exist.
-    // Now, we simply initialize the user-specific data as empty arrays.
-    // In the future, we will expand this to fetch real data from Firestore
-    // for a logged-in user.
-    userOrders = [];
-    userAddresses = [];
-    userReturns = [];
-    console.log("Initialized user data as empty.");
-    // By returning a resolved promise, we ensure other startup tasks can continue.
+    if (auth.isLoggedIn()) {
+        try {
+            console.log("Fetching user data (addresses and orders)...");
+            
+            // --- THIS IS THE FIX ---
+            // We use Promise.allSettled to ensure that if one API call fails,
+            // the others can still succeed. This is much more resilient.
+            const results = await Promise.allSettled([
+                fetchWithAuth('/api/addresses'),
+                fetchWithAuth('/api/get-orders')
+            ]);
+
+            const addressesResult = results[0];
+            const ordersResult = results[1];
+
+            if (addressesResult.status === 'fulfilled') {
+                userAddresses = addressesResult.value;
+                console.log("Successfully fetched addresses:", userAddresses.length);
+            } else {
+                console.error("Failed to fetch user addresses:", addressesResult.reason);
+                userAddresses = []; // Default to empty on error
+            }
+
+            if (ordersResult.status === 'fulfilled') {
+                userOrders = ordersResult.value;
+                console.log("Successfully fetched orders:", userOrders.length);
+            } else {
+                console.error("Failed to fetch user orders:", ordersResult.reason);
+                userOrders = []; // Default to empty on error
+            }
+            
+        } catch (error) {
+            // This outer catch is a final safety net.
+            console.error("A critical error occurred during initial user data fetch:", error);
+            userAddresses = [];
+            userOrders = [];
+        }
+    } else {
+        // Clear data for logged-out users
+        userOrders = [];
+        userAddresses = [];
+        userReturns = [];
+    }
     return Promise.resolve();
 }
 
@@ -696,7 +1060,10 @@ function displayFooter(footerInfo) {
     
     footerBottomContainer.innerHTML = `<p>&copy; ${new Date().getFullYear()} LuxuryHampers. All Rights Reserved.</p>`;
 }
-
+function renderHomePage() {
+    console.log("Router is rendering the homepage.");
+    showAllProducts();
+}
 function renderFooterLayout() {
     if (!window.footerContent) return;
 
@@ -881,7 +1248,7 @@ function displayProducts(products, gridElement = productGrid) {
                 : '';
 
             return `
-                <div class="product-card">
+               <a href="/#/products/${product.slug}" class="product-card">
                     <div class="product-image-container"
                          data-product-id="${product.id}"
                          data-images="${imageUrls.join(',')}"
@@ -915,7 +1282,7 @@ function displayProducts(products, gridElement = productGrid) {
                             </button>
                         </div>
                     </div>
-                </div>`;
+                </a>`;
         }).join('');
 }
 function renderRelatedProducts(currentProduct) {
@@ -1050,13 +1417,37 @@ function setupImageZoom(container) {
     }
 }
 
-async function showProductDetail(productId) {
-    const product = allProducts.find(p => p.id.toString() === productId.toString());
-    if (!product) return;
+// In app.js, replace your existing showProductDetail function with this one.
 
-    // This ensures the detail page is blank before we add new content
+async function showProductDetail(slug) {
+    console.log("--- DEBUGGING showProductDetail ---");
+    console.log("1. Router called with slug:", slug);
+
+    // Let's inspect the first product to see if it has a slug field.
+    if (allProducts && allProducts.length > 0) {
+        console.log("2. Checking the first product in the data array:", allProducts[0]);
+    } else {
+        console.log("2. ERROR: The 'allProducts' array is empty.");
+        return;
+    }
+
+    const product = allProducts.find(p => createSlug(p.slug) === createSlug(slug));
+
+    if (!product) {
+        console.error("3. FAILED to find a matching product.");
+        console.log("   - URL slug being searched for:", createSlug(slug));
+        console.log("   - Slugs available in data:", allProducts.slice(0, 5).map(p => p.slug)); // Shows first 5 slugs
+        console.log("--- END DEBUGGING ---");
+        return; // This is where the function is stopping.
+    }
+
+    console.log("3. SUCCESS! Found product:", product);
+    console.log("4. Now attempting to show the detail page...");
+    console.log("--- END DEBUGGING ---");
+
+    // --- Original function continues from here ---
     pageDetail.innerHTML = '';
-    showPage('detail'); // Show the blank page first
+    showPage('detail');
 
     const deliveryInfoData = await fetchData('data/pages/delivery_info.json');
     let deliveryReturnsContent = '<p>Delivery information could not be loaded.</p>';
@@ -1122,21 +1513,13 @@ async function showProductDetail(productId) {
             </div>
         </div>`;
     
-    // --- THE FIX ---
-    // We wrap all the post-render logic in a setTimeout.
-    // This pushes the code to the back of the execution queue, giving the browser
-    // time to parse the HTML we just injected with innerHTML.
     setTimeout(() => {
-        // Renders the related products section
         renderRelatedProducts(product);
-
-        // Now, this query will reliably find the container
         const imageZoomContainer = document.querySelector('.image-zoom-container');
         if (imageZoomContainer) {
             setupImageZoom(imageZoomContainer);
         }
         
-        // Attaches event listeners for the tabs
         const tabContainer = pageDetail.querySelector('.product-tabs-container');
         if (tabContainer) {
             tabContainer.querySelectorAll('.tab-link').forEach(link => {
@@ -1149,7 +1532,6 @@ async function showProductDetail(productId) {
             });
         }
 
-        // Attaches event listeners for the quantity input
         const qtyInput = pageDetail.querySelector('.quantity-input');
         if (qtyInput) {
             pageDetail.querySelector('[data-action="decrease"]').addEventListener('click', () => {
@@ -1162,7 +1544,7 @@ async function showProductDetail(productId) {
                 if (val < max) qtyInput.value = val + 1;
             });
         }
-    }, 0); // A timeout of 0 is all that's needed.
+    }, 0);
 }
 function showAllProducts() {
     console.log("showAllProducts: Resetting all filters and UI elements.");
@@ -1271,31 +1653,12 @@ function renderWishlistPage() {
 
     showPage('wishlist');
 }
-function displayMenu(menuItems) {
-    if (!navLinksContainer || !mobileNavLinks || !menuItems) {
-        console.error("Menu container elements or menu items not found.");
-        return;
-    }
 
-    let desktopMenuHtml = '';
-    let mobileMenuHtml = `<a href="#" id="mobile-menu-account-link" class="mobile-nav-link-item account-link"><i class="fa-solid fa-user"></i> My Account / Log In</a>`;
-
-    menuItems.forEach(item => {
-        const saleClass = item.isSale ? 'sale-item' : '';
-        const commonAttrs = `href="#" data-argument="${item.argument}" data-target="${item.target}" data-title="${item.title}"`;
-
-        desktopMenuHtml += `<a class="nav-links-desktop-item ${saleClass}" ${commonAttrs}>${item.title}</a>`;
-        mobileMenuHtml += `<a class="mobile-nav-link-item ${saleClass}" ${commonAttrs}>${item.title}</a>`;
-    });
-
-    navLinksContainer.innerHTML = desktopMenuHtml;
-    mobileNavLinks.innerHTML = mobileMenuHtml;
-}
 
 
 function handleMenuClick(menuItem) {
     console.log("handleMenuClick triggered with:", menuItem);
-    if (!menuItem || menuItem.argument === undefined) return;
+    if (!menuItem || (menuItem.argument === undefined && menuItem.target === undefined)) return;
 
     document.querySelectorAll('.nav-links-desktop-item, .mobile-nav-link-item').forEach(l => l.classList.remove('active'));
     document.querySelectorAll(`a[data-argument="${menuItem.argument}"]`).forEach(l => l.classList.add('active'));
@@ -1376,14 +1739,29 @@ function closeMobileMenu() {
     mobileNavOverlay.classList.remove('active');
 }
 
+// REPLACE this function in your public/app.js file
+
+// In app.js
+
 function updateHeaderIcons() {
     if (!headerIconsContainer) return;
     const isLoggedIn = auth.isLoggedIn();
+    let displayName = 'Login';
+
+    if (isLoggedIn) {
+        const fullName = auth.getUserName();
+        displayName = fullName ? fullName.split(' ')[0] : 'Account';
+    }
+
+    // --- THIS IS THE FIX ---
+    // The account icon is now wrapped in a proper router link
     headerIconsContainer.innerHTML = `
-        <div class="account-icon-wrapper">
-            <i class="fa-solid fa-user"></i>
-            <span class="account-text">${isLoggedIn ? auth.getUserName().split(' ')[0] : 'Login'}</span>
-        </div>
+        <a href="/#/account" class="account-link-wrapper" aria-label="My Account">
+            <div class="account-icon-wrapper">
+                <i class="fa-solid fa-user"></i>
+                <span class="account-text">${displayName}</span>
+            </div>
+        </a>
         <div class="cart-icon-wrapper">
             <i class="fa-solid fa-basket-shopping"></i>
             <span class="cart-count">0</span>
@@ -1391,7 +1769,6 @@ function updateHeaderIcons() {
     `;
     updateCartCount();
 }
-
 function showConfirmationModal(message, callback) {
     if (!confirmationModalOverlay || !confirmationModal || !modalMessage) return;
 
@@ -1530,7 +1907,15 @@ function renderDeliveryInfoPage(deliveryData) {
 
 // REPLACE this entire function in app.js
 
+// REPLACE the renderLoginPage function in your app.js file with this CORRECT version.
+
+// REPLACE your entire renderLoginPage function with this one
 function renderLoginPage() {
+    // Hide guest checkout button if the cart is empty.
+    const guestCheckoutHtml = cart.length > 0
+        ? `<button id="guest-checkout-btn" class="btn btn-secondary btn-full-width">Checkout as a Guest</button>`
+        : '';
+
     pageLogin.innerHTML = `
         <div class="auth-container">
             <h2 class="auth-title">Welcome Back!</h2>
@@ -1540,8 +1925,8 @@ function renderLoginPage() {
                 <button class="btn btn-social btn-google"><i class="fab fa-google"></i> Continue with Google</button>
                 <button class="btn btn-social btn-facebook"><i class="fab fa-facebook-f"></i> Continue with Facebook</button>
             </div>
-            
-            <button id="guest-checkout-btn" class="btn btn-secondary btn-full-width">Checkout as a Guest</button>
+
+            ${guestCheckoutHtml}
 
             <div class="separator"><span>OR</span></div>
 
@@ -1569,12 +1954,14 @@ function renderLoginPage() {
             </form>
             <p class="auth-switch">Don't have an account? <a href="#" id="show-register">Register</a></p>
         </div>`;
-    
+
     showPage('login');
 
-    // --- Event Listeners for the updated form ---
-
-    document.getElementById('guest-checkout-btn').addEventListener('click', displayCheckoutPage);
+    // Add the listener ONLY if the button exists.
+    const guestCheckoutBtn = document.getElementById('guest-checkout-btn');
+    if (guestCheckoutBtn) {
+        guestCheckoutBtn.addEventListener('click', displayCheckoutPage);
+    }
 
     document.getElementById('password-toggle').addEventListener('click', (e) => {
         const passwordInput = document.getElementById('login-password');
@@ -1589,8 +1976,8 @@ function renderLoginPage() {
             icon.classList.add('fa-eye-slash');
         }
     });
-    
-    document.getElementById('login-form').addEventListener('submit', e => {
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const email = document.getElementById('login-email').value;
         const password = document.getElementById('login-password').value;
@@ -1602,16 +1989,21 @@ function renderLoginPage() {
         btnText.style.display = 'none';
         spinner.style.display = 'block';
 
-        setTimeout(() => {
-            if (auth.login(email, password)) {
-                showAllProducts();
+        const result = await auth.login(email, password);
+
+       if (result.success) {
+            if (postLoginRedirectPath) {
+                router.navigate(postLoginRedirectPath);
+                postLoginRedirectPath = null;
             } else {
-                showConfirmationModal('Login failed. Please check your credentials.');
-                loginBtn.disabled = false;
-                btnText.style.display = 'inline';
-                spinner.style.display = 'none';
+                router.navigate('/');
             }
-        }, 500);
+        } else {
+            showConfirmationModal(result.message);
+            loginBtn.disabled = false;
+            btnText.style.display = 'inline';
+            spinner.style.display = 'none';
+        }
     });
 
     document.querySelectorAll('.btn-social').forEach(btn => {
@@ -1619,6 +2011,7 @@ function renderLoginPage() {
     });
 }
 
+// REPLACE this function in your public/app.js file
 function renderRegisterPage() {
     pageRegister.innerHTML = `
         <div class="auth-container">
@@ -1626,22 +2019,21 @@ function renderRegisterPage() {
             <p class="auth-subtitle">Join us to discover exquisite hampers for every occasion.</p>
             <form id="register-form">
                 <div class="form-group">
-                    <div class="input-wrapper">
-                        <i class="prefix-icon fa-solid fa-user"></i>
-                        <input type="text" id="register-name" placeholder="Full Name" required>
-                    </div>
+                    <input type="text" id="register-name" placeholder="Full Name" required>
                 </div>
                 <div class="form-group">
-                    <div class="input-wrapper">
-                        <i class="prefix-icon fa-solid fa-envelope"></i>
-                        <input type="email" id="register-email" placeholder="Email Address" required>
-                    </div>
+                    <input type="email" id="register-email" placeholder="Email Address" required>
                 </div>
                 <div class="form-group">
-                    <div class="input-wrapper">
-                        <i class="prefix-icon fa-solid fa-lock"></i>
-                        <input type="password" id="register-password" placeholder="Password (min. 6 characters)" required minlength="6">
+                    <input type="password" id="register-password" placeholder="Password" required>
+                    <!-- New Password Strength Meter -->
+                    <div class="password-strength-container">
+                        <div id="register-strength-bar" class="strength-bar"></div>
                     </div>
+                    <div id="register-strength-text" class="password-strength-text"></div>
+                </div>
+                <div class="form-group">
+                    <input type="password" id="register-confirm-password" placeholder="Confirm Password" required>
                 </div>
                 <button type="submit" id="register-btn" class="btn btn-primary btn-full-width">
                     <span class="btn-text">Create Account</span>
@@ -1653,11 +2045,39 @@ function renderRegisterPage() {
     
     showPage('register');
     
-    document.getElementById('register-form').addEventListener('submit', e => {
+    const passwordInput = document.getElementById('register-password');
+    const strengthBar = document.getElementById('register-strength-bar');
+    const strengthText = document.getElementById('register-strength-text');
+
+    passwordInput.addEventListener('input', () => {
+        const password = passwordInput.value;
+        const { score, feedback } = checkPasswordStrength(password);
+        
+        strengthBar.className = 'strength-bar'; // Reset classes
+        if (password.length > 0) {
+            if (score <= 1) strengthBar.classList.add('weak');
+            else if (score === 2) strengthBar.classList.add('medium');
+            else strengthBar.classList.add('strong');
+        }
+        strengthText.textContent = password.length > 0 ? feedback : '';
+    });
+    
+    document.getElementById('register-form').addEventListener('submit', async (e) => {
         e.preventDefault();
+        const password = document.getElementById('register-password').value;
+        const confirmPassword = document.getElementById('register-confirm-password').value;
+
+        if (password.length < 8 || !password.match(/[0-9]/)) {
+            showConfirmationModal("Password must be at least 8 characters long and contain at least one number.");
+            return;
+        }
+        if (password !== confirmPassword) {
+            showConfirmationModal("Passwords do not match. Please try again.");
+            return;
+        }
+
         const name = document.getElementById('register-name').value;
         const email = document.getElementById('register-email').value;
-        const password = document.getElementById('register-password').value;
         const registerBtn = document.getElementById('register-btn');
         const btnText = registerBtn.querySelector('.btn-text');
         const spinner = registerBtn.querySelector('.spinner');
@@ -1666,16 +2086,22 @@ function renderRegisterPage() {
         btnText.style.display = 'none';
         spinner.style.display = 'block';
 
-        setTimeout(() => {
-            if (auth.register(name, email, password)) {
-                showAllProducts();
-            } else {
-                showConfirmationModal('Registration failed. An account with this email might already exist.');
-                registerBtn.disabled = false;
-                btnText.style.display = 'inline';
-                spinner.style.display = 'none';
-            }
-        }, 500);
+        const result = await auth.register(name, email, password);
+
+        if (result.success) {
+    // If the user was trying to checkout, send them there. Otherwise, homepage.
+    if (postLoginRedirectPath) {
+        router.navigate(postLoginRedirectPath);
+        postLoginRedirectPath = null; // Clear the path so it's only used once
+    } else {
+        router.navigate('/');
+    }
+} else {
+            showConfirmationModal(result.message);
+            registerBtn.disabled = false;
+            btnText.style.display = 'inline';
+            spinner.style.display = 'none';
+        }
     });
 }
 
@@ -1735,8 +2161,29 @@ function closeQuickViewModal() {
     quickViewContent.innerHTML = ''; // Clear content to stop videos/gifs
 }
 
-function saveCart() { localStorage.setItem('luxuryHampersCart', JSON.stringify(cart)); }
-function loadCart() { cart = JSON.parse(localStorage.getItem('luxuryHampersCart')) || []; updateCart(); }
+async function saveCart() {
+    localStorage.setItem('luxuryHampersCart', JSON.stringify(cart));
+    // If the user is logged in, also save the cart to the backend.
+    if (auth.isLoggedIn()) {
+        try {
+            await fetchWithAuth('/api/cart', {
+                method: 'POST',
+                body: JSON.stringify({ cart: cart })
+            });
+        } catch (error) {
+            console.error("Could not sync cart to backend:", error);
+            // Optionally, show a subtle "could not sync" message to the user.
+        }
+    }
+}
+
+function loadCart() {
+    // This function now only loads from localStorage.
+    // The new logic in auth.js handles fetching the backend cart upon login.
+    cart = JSON.parse(localStorage.getItem('luxuryHampersCart')) || [];
+    updateCart();
+}
+
 
 // This is the correct and complete version of the function.
 function addToCart(productId, quantity = 1, isCustom = false, customItems = [], customPrice = 0) {
@@ -1986,6 +2433,14 @@ function closeAddedToCartSheet() { addedToCartSheet.classList.remove('active'); 
 // REPLACE this entire function in app.js
 
 function displayCheckoutPage() {
+    // First, perform triage. Is there anything in the cart?
+    if (cart.length === 0) {
+        // If the cart is empty, show a clear message and stop everything.
+        showConfirmationModal("Your shopping basket is empty. Please add items before proceeding to checkout.");
+        // Optional but recommended: guide the user back to the main page.
+        router.navigate('/');
+        return; // Halt the function immediately.
+    }
     const isLoggedIn = auth.isLoggedIn();
     
     // Auto-select the default address when checkout starts
@@ -2078,71 +2533,292 @@ function displayCheckoutPage() {
     
     const addNewAddressLink = document.getElementById('add-new-address-checkout');
     if (addNewAddressLink) addNewAddressLink.addEventListener('click', (e) => { e.preventDefault(); addressFormReturnPath = 'checkout'; renderAddressForm(); });
-}
-
-
-// REPLACE this entire function in app.js
-
-function placeOrder() {
-    if (cart.length === 0) { showConfirmationModal('Your cart is empty.'); return; }
-    const isLoggedIn = auth.isLoggedIn();
-    let orderDetails = {};
-
-    if (isLoggedIn) {
-        // --- THIS IS THE FIX ---
-        // Reads from the saved variable instead of the page
-        const selectedAddressId = selectedCheckoutAddressId;
-        if (!selectedAddressId) { showConfirmationModal('Please select a delivery address.'); return; }
-        const selectedAddress = userAddresses.find(addr => addr.id === selectedAddressId);
-        orderDetails = { name: selectedAddress.fullName, email: auth.getUserEmail(), address: selectedAddress };
-    } else {
-        if (!guestDetails.name || !guestDetails.email || !guestDetails.addressLine1 || !guestDetails.city || !guestDetails.postcode) { showConfirmationModal('Please fill in all required delivery details.'); return; }
-        orderDetails = { name: guestDetails.name, email: guestDetails.email, address: { addressLine1: guestDetails.addressLine1, city: guestDetails.city, postcode: guestDetails.postcode }, phone: guestDetails.phone };
-    }
-
-    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-    let deliveryCharge = 0; let discountAmount = 0;
-
-    if (totalItems > 0 && subtotal < appConfig.delivery.freeDeliveryThreshold) {
-        deliveryCharge = appConfig.delivery.baseCharge;
-        if (totalItems > 1) { deliveryCharge += (totalItems - 1) * appConfig.delivery.additionalItemCharge; }
-    }
-    if (appliedDiscount) {
-        if (appliedDiscount.type === 'percent') { discountAmount = (subtotal * appliedDiscount.value) / 100; }
-        else if (appliedDiscount.type === 'fixed') { discountAmount = appliedDiscount.value; }
-        else if (appliedDiscount.type === 'shipping') { deliveryCharge = 0; }
-    }
     
-    const newOrder = { id: `ORD-${Date.now()}`, orderDate: new Date().toISOString(), status: "Pending", customerName: orderDetails.name, deliveryAddress: orderDetails.address, items: cart.map(item => ({ productId: item.id, title: item.title, quantity: item.quantity, price: item.price })), itemsSubtotal: subtotal, deliveryChargeApplied: deliveryCharge, discountApplied: discountAmount, totalAmount: subtotal + deliveryCharge - discountAmount };
-    userOrders.unshift(newOrder);
-    
-    pageCheckout.innerHTML = `<div class="order-confirmation"><h2>Thank You, ${orderDetails.name.split(' ')[0]}!</h2><p>Your order #${newOrder.id} has been placed successfully. A confirmation will be sent to ${orderDetails.email}.</p><button id="back-to-home-btn" class="btn btn-primary btn-full-width">Continue Shopping</button></div>`;
-    document.getElementById('back-to-home-btn').addEventListener('click', showAllProducts);
-    
-    // ... at the end of the placeOrder function
-closeCart(); // Close the cart visually first.
-
-// Delay the cart data update to allow the animation to finish.
-setTimeout(() => {
-    cart = [];
-    appliedDiscount = null;
-    selectedCheckoutAddressId = null;
-    checkoutStep = 1;
-    updateCart(); // Now update the cart data in the background.
-}, 350); // 350ms is just longer than the 0.3s CSS animation time.
 }
 
 
 
+async function placeOrder() {
+    try {
+        // --- THIS IS THE NEW VERIFICATION CHECK ---
+        if (auth.isLoggedIn() && !auth.isVerified()) {
+            showConfirmationModal("Please check your inbox and verify your email address before placing an order.");
+            return; // Stop the function immediately
+        }
+        if (cart.length === 0) return showConfirmationModal('Your cart is empty.');
+        
+        const isLoggedIn = auth.isLoggedIn();
+
+        // --- THIS IS THE TRIAGE LOGIC ---
+        if (!isLoggedIn) {
+            // If user is a guest, call the dedicated guest function and stop here.
+            return placeGuestOrder(); 
+        }
+        // --- END TRIAGE LOGIC ---
+
+        // If the code reaches here, the user is logged in. Proceed as normal.
+        const currentUser = auth.getCurrentUser();
+        const selectedAddress = userAddresses.find(addr => addr.id === selectedCheckoutAddressId);
+        if (!selectedAddress) return showConfirmationModal('Please select a delivery address.');
+        
+        // (The rest of the original placeOrder function for logged-in users remains exactly the same)
+        const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+        let deliveryCharge = 0;
+        let discountAmount = 0;
+        if (totalItems > 0 && subtotal < appConfig.delivery.freeDeliveryThreshold) {
+            deliveryCharge = appConfig.delivery.baseCharge;
+            if (totalItems > 1) deliveryCharge += (totalItems - 1) * appConfig.delivery.additionalItemCharge;
+        }
+        if (appliedDiscount) {
+            if (appliedDiscount.type === 'percent') discountAmount = (subtotal * appliedDiscount.value) / 100;
+            else if (appliedDiscount.type === 'fixed') discountAmount = appliedDiscount.value;
+            else if (appliedDiscount.type === 'shipping') deliveryCharge = 0;
+        }
+
+        const orderPayload = {
+            customerName: selectedAddress.fullName,
+            deliveryAddress: selectedAddress,
+          items: cart.map(item => {
+    const orderItem = {
+        productId: item.id,
+        title: item.title,
+        quantity: item.quantity,
+        price: item.price,
+        isCustom: item.isCustom || false,
+    };
+    // If the item is a custom hamper, also save its contents.
+    if (item.isCustom) {
+        orderItem.contents = item.contents;
+    }
+    return orderItem;
+}),
+            itemsSubtotal: subtotal,
+            deliveryChargeApplied: deliveryCharge,
+            discountApplied: discountAmount,
+            totalAmount: subtotal + deliveryCharge - discountAmount
+        };
+
+        const result = await fetchWithAuth('/api/create-order', {
+            method: 'POST',
+            body: JSON.stringify({ orderPayload })
+        });
+        
+        userOrders = await fetchWithAuth('/api/get-orders');
+        
+        pageCheckout.innerHTML = `<div class="order-confirmation"><h2>Thank You, ${selectedAddress.fullName.split(' ')[0]}!</h2><p>Your order #${result.orderId} has been placed successfully.</p><button id="back-to-home-btn" class="btn btn-primary btn-full-width">Continue Shopping</button></div>`;
+        document.getElementById('back-to-home-btn').addEventListener('click', showAllProducts);
+        
+        closeCart();
+        setTimeout(() => {
+            cart = [];
+            appliedDiscount = null;
+            selectedCheckoutAddressId = null;
+            checkoutStep = 1;
+            updateCart();
+        }, 350);
+
+    } catch (error) {
+        console.error("CRITICAL ERROR in placeOrder:", error);
+        showConfirmationModal(`Order Failed: ${error.message}`);
+    }
+}
+
+async function placeGuestOrder() {
+    try {
+        // Prepare the order payload using the stored guest details
+        const orderPayload = {
+            customerName: guestDetails.name,
+            customerEmail: guestDetails.email, // It's good practice to store the guest email
+            deliveryAddress: {
+                fullName: guestDetails.name,
+                addressLine1: guestDetails.addressLine1,
+                city: guestDetails.city,
+                postcode: guestDetails.postcode
+            },
+            items: cart.map(item => ({
+                productId: item.id,
+                title: item.title,
+                quantity: item.quantity,
+                price: item.price,
+                isCustom: item.isCustom || false
+            })),
+            // Recalculate totals to be safe
+            itemsSubtotal: cart.reduce((sum, item) => sum + (item.price * item.quantity), 0),
+            // ... add delivery and discount logic if you want it for guests ...
+            totalAmount: cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) // Simplified total for now
+        };
+
+        // IMPORTANT: This uses the standard 'fetch', NOT 'fetchWithAuth'
+        const response = await fetch('/api/create-guest-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderPayload })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Guest order submission failed.');
+        }
+
+        const result = await response.json();
+
+        // Show confirmation and clear the cart, similar to the original function
+        pageCheckout.innerHTML = `<div class="order-confirmation"><h2>Thank You, ${guestDetails.name.split(' ')[0]}!</h2><p>Your order #${result.orderId} has been placed successfully.</p><button id="back-to-home-btn" class="btn btn-primary btn-full-width">Continue Shopping</button></div>`;
+        document.getElementById('back-to-home-btn').addEventListener('click', showAllProducts);
+        
+        cart = [];
+        guestDetails = {};
+        appliedDiscount = null;
+        checkoutStep = 1;
+        updateCart();
+
+    } catch (error) {
+        console.error("CRITICAL ERROR in placeGuestOrder:", error);
+        showConfirmationModal(`Order Failed: ${error.message}`);
+    }
+}
 
 // ----------------------------------------------------------------- //
 // -------------------- KIT: MY ACCOUNT --------------------------- //
 // ----------------------------------------------------------------- //
 
+// REPLACE this entire function in your public/app.js file
+
+function renderAndAttachReturnForm(order) {
+    // Hide the 'Request a Return' link that was just clicked
+    const triggerContainer = document.getElementById('return-trigger-container');
+    if (triggerContainer) triggerContainer.style.display = 'none';
+
+    // This is the same HTML for the form you had before
+    const returnFormHtml = `
+        <form id="direct-return-form" class="detail-card">
+            <h4>Request a Return</h4>
+            <p>Please select the items you wish to return and provide a reason.</p>
+            <div class="form-group">
+            ${order.items.map(item => `
+                <div class="return-item-control">
+                    <div class="form-group-checkbox">
+                        <input type="checkbox" name="return-item" id="return-item-${item.productId}" value="${item.productId}">
+                        <label for="return-item-${item.productId}">${item.title}</label>
+                    </div>
+                    <div class="quantity-selector-inline" style="display: none;">
+                        <button type="button" class="quantity-btn decrease-return-qty" data-product-id="${item.productId}">-</button>
+                        <input type="number" class="quantity-input-return" id="return-qty-${item.productId}" value="1" min="1" max="${item.quantity}" readonly>
+                        <button type="button" class="quantity-btn increase-return-qty" data-product-id="${item.productId}">+</button>
+                    </div>
+                    <p class="return-price">£${item.price.toFixed(2)} ea</p>
+                </div>
+            `).join('')}
+            </div>
+            <div class="form-group" id="return-reason-group" style="display: none;">
+                <label for="return-reason">Reason for return:</label>
+                <textarea id="return-reason" rows="10" required></textarea>
+            </div>
+            <div id="return-subtotal-display" class="order-summary-total" style="display: none; border-top: 1px solid var(--border-color); margin-top:0; padding-top:0.5rem;">
+                <span>Refund Subtotal</span><span id="refund-amount">£0.00</span>
+            </div>
+            <div style="text-align: right; margin-top: 1rem;">
+                <button type="submit" id="submit-return-btn" class="btn-link" disabled>Submit Return Request</button>
+            </div>
+        </form>`;
+    
+    // Inject the form into the page
+    const itemsContainer = document.getElementById('order-items-container');
+    itemsContainer.insertAdjacentHTML('afterend', returnFormHtml);
+
+    // --- ALL THE LISTENER LOGIC IS NOW CORRECTLY PLACED HERE ---
+    const returnForm = document.getElementById('direct-return-form');
+    const reasonGroup = document.getElementById('return-reason-group');
+    const submitBtn = document.getElementById('submit-return-btn');
+    const subtotalDisplay = document.getElementById('return-subtotal-display');
+    const refundAmountEl = document.getElementById('refund-amount');
+
+    const validateReturnForm = () => {
+        let refundSubtotal = 0;
+        let anyChecked = false;
+        const returnItemControls = returnForm.querySelectorAll('.return-item-control');
+
+        returnItemControls.forEach(control => {
+            const checkbox = control.querySelector('input[name="return-item"]');
+            const quantitySelector = control.querySelector('.quantity-selector-inline');
+            const productId = checkbox.value;
+            const quantityInput = document.getElementById(`return-qty-${productId}`);
+
+            if (checkbox.checked) {
+                anyChecked = true;
+                quantitySelector.style.display = 'flex';
+                const item = order.items.find(i => i.productId === productId);
+                if (item && quantityInput) {
+                    refundSubtotal += item.price * parseInt(quantityInput.value, 10);
+                }
+            } else {
+                quantitySelector.style.display = 'none';
+            }
+        });
+
+        reasonGroup.style.display = anyChecked ? 'block' : 'none';
+        subtotalDisplay.style.display = anyChecked ? 'flex' : 'none';
+        if(anyChecked) refundAmountEl.textContent = `£${refundSubtotal.toFixed(2)}`;
+        submitBtn.disabled = !anyChecked;
+    };
+
+    returnForm.addEventListener('click', (e) => {
+        const target = e.target;
+        if (target.closest('.return-item-control')) {
+            // Handle checkbox clicks (including label clicks)
+            if (target.matches('label')) {
+                const checkbox = document.getElementById(target.getAttribute('for'));
+                if (checkbox) checkbox.checked = !checkbox.checked;
+            }
+            validateReturnForm();
+        }
+        
+        // Handle quantity button clicks
+        if (target.matches('.decrease-return-qty, .increase-return-qty')) {
+            const productId = target.dataset.productId;
+            const quantityInput = document.getElementById(`return-qty-${productId}`);
+            let val = parseInt(quantityInput.value, 10);
+            const max = parseInt(quantityInput.max, 10);
+
+            if (target.matches('.decrease-return-qty') && val > 1) quantityInput.value = val - 1;
+            else if (target.matches('.increase-return-qty') && val < max) quantityInput.value = val + 1;
+            
+            validateReturnForm();
+        }
+    });
+    
+    returnForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const reason = document.getElementById('return-reason').value;
+        const checkedBoxes = returnForm.querySelectorAll('input[name="return-item"]:checked');
+        if (checkedBoxes.length === 0) return showConfirmationModal('Please select at least one item.');
+        if (reason.trim() === '') return showConfirmationModal('Please provide a reason for the return.');
+
+        const selectedItems = Array.from(checkedBoxes).map(cb => {
+            const item = order.items.find(i => i.productId === cb.value);
+            const quantity = parseInt(document.getElementById(`return-qty-${cb.value}`).value, 10);
+            return { ...item, quantity };
+        });
+
+        const refundAmount = selectedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const newReturn = {
+            id: `RET-${Date.now()}`,
+            orderId: order.id,
+            requestDate: new Date().toISOString(),
+            status: "Pending",
+            reason: reason,
+            items: selectedItems.map(item => `"${item.title}" (x${item.quantity})`),
+            refundAmount: refundAmount
+        };
+        userReturns.unshift(newReturn);
+        showConfirmationModal(`Your return request for £${refundAmount.toFixed(2)} has been submitted.`, () => renderMyReturnsPage(true));
+    });
+}
+
 function renderAccountPage() {
     if (!auth.isLoggedIn()) {
-        renderLoginPage();
+       router.navigate('/login');
         return;
     }
     const currentUser = auth.getCurrentUser();
@@ -2155,14 +2831,13 @@ function renderAccountPage() {
     pageAccount.innerHTML = `
         <div class="account-container">
             <h2 class="account-title">Welcome, ${userName}!</h2>
-            <div class="account-menu">
-                <a href="#" class="account-menu-item" data-page="my-orders"><i class="fa-solid fa-box-archive"></i> My Orders</a>
-                
-                <a href="#" class="account-menu-item" data-page="my-wishlist"><i class="fa-solid fa-heart"></i> My Wishlist</a>
-                <a href="#" class="account-menu-item" data-page="my-returns"><i class="fa-solid fa-undo"></i> My Returns</a>
-                <a href="#" class="account-menu-item" data-page="my-addresses"><i class="fa-solid fa-map-location-dot"></i> My Addresses</a>
-                <a href="#" class="account-menu-item" data-page="account-settings"><i class="fa-solid fa-cog"></i> Account Settings</a>
-            </div>
+           <div class="account-menu">
+    <a href="/#/account/orders" class="account-menu-item"><i class="fa-solid fa-box-archive"></i> My Orders</a>
+    <a href="/#/account/wishlist" class="account-menu-item"><i class="fa-solid fa-heart"></i> My Wishlist</a>
+    <a href="/#/account/returns" class="account-menu-item"><i class="fa-solid fa-undo"></i> My Returns</a>
+    <a href="/#/account/addresses" class="account-menu-item"><i class="fa-solid fa-map-location-dot"></i> My Addresses</a>
+    <a href="/#/account/settings" class="account-menu-item"><i class="fa-solid fa-cog"></i> Account Settings</a>
+</div>
             <button id="logout-btn" class="btn btn-secondary btn-full-width">Logout</button>
         </div>`;
     showPage('account');
@@ -2262,17 +2937,13 @@ function renderMyReturnsPage() {
 // REPLACE this entire function in app.js
 
 function renderMyOrdersPage() {
+    // This function no longer needs to fetch. It just displays the userOrders array
+    // which is now populated on login by fetchInitialUserData.
     let contentHtml = `<div class="page-header"><h2>My Orders</h2><button class="btn btn-secondary" id="orders-back-to-account">Back to Account</button></div>`;
     if (userOrders.length === 0) {
         contentHtml += `<p>You haven't placed any orders yet.</p>`;
     } else {
-        contentHtml += `<div class="order-list">${userOrders.map(order => {
-            // This variable will hold the tracking button if data exists
-            const trackingButtonHtml = order.trackingNumber && order.courierUrl
-                ? `<a href="${order.courierUrl}${order.trackingNumber}" target="_blank" class="btn btn-secondary btn-sm">Track Order</a>`
-                : '';
-
-            return `
+        contentHtml += `<div class="order-list">${userOrders.map(order => `
             <div class="data-card">
                 <div class="data-card-header">
                     <div>
@@ -2285,11 +2956,9 @@ function renderMyOrdersPage() {
                     </div>
                 </div>
                 <div class="data-card-actions">
-                    ${trackingButtonHtml}
                     <button class="btn btn-primary btn-sm view-order-details" data-order-id="${order.id}">View Details</button>
                 </div>
-            </div>`;
-        }).join('')}</div>`;
+            </div>`).join('')}</div>`;
     }
     pageMyOrders.innerHTML = contentHtml;
     showPage('my-orders');
@@ -2331,6 +3000,8 @@ function receiveReturnItem(returnId) {
     }
 }
 
+// REPLACE this entire function in your public/app.js file
+
 function renderOrderDetailPage(orderId) {
     const order = userOrders.find(o => o.id === orderId);
     if (!order) {
@@ -2342,6 +3013,7 @@ function renderOrderDetailPage(orderId) {
         ? `<p><strong>Tracking:</strong> <a href="${order.courierUrl}${order.trackingNumber}" target="_blank">${order.trackingNumber}</a></p>`
         : '';
 
+    // --- Start building the main HTML content ---
     let contentHtml = `
         <div class="page-header"><h2>Order Details</h2><button class="btn btn-secondary" id="back-to-orders">Back to My Orders</button></div>
         <div class="detail-card">
@@ -2353,177 +3025,69 @@ function renderOrderDetailPage(orderId) {
             </div>
         </div>
         <div class="detail-card" id="order-items-container"><h3>Items in this Order</h3><div class="order-detail-items">
-            ${order.items.map(item => `
-                <div class="order-summary-item">
-                    <img src="${getProductImageUrls(item)[0]}" alt="${item.title}" class="cart-item-image">
-                    <div class="cart-item-info"><p class="cart-item-title">${item.title}</p><p>Qty: ${item.quantity}</p></div>
-                    <span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span>
-                </div>`).join('')}
+            // THIS IS THE NEW, CORRECTED CODE
+${order.items.map(item => {
+    const product = allProducts.find(p => p.id === item.productId);
+    const imageUrl = item.isCustom ? 'assets/images/custom_hamper_placeholder.jpg' : (product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A');
+
+    // Check if the item is a custom hamper and has contents to display.
+    const componentsHtml = (item.isCustom && item.contents)
+        ? `<ul class="order-detail-components">
+            ${item.contents.map(c => `<li>- ${c.name} (x${c.quantity})</li>`).join('')}
+           </ul>`
+        : '';
+
+    return `
+        <div class="order-summary-item">
+            <img src="${imageUrl}" alt="${item.title}" class="cart-item-image">
+            <div class="cart-item-info">
+                <p class="cart-item-title">${item.title}</p>
+                <p>Qty: ${item.quantity}</p>
+                ${componentsHtml}
+            </div>
+            <span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span>
+        </div>`;
+}).join('')}
         </div></div>
         <div class="order-summary detail-card">
             <div class="order-summary-item"><span>Items Subtotal</span><span>£${order.itemsSubtotal.toFixed(2)}</span></div>
             <div class="order-summary-item"><span>Delivery</span><span>£${order.deliveryChargeApplied.toFixed(2)}</span></div>
             <div class="order-summary-total"><span>Total</span><span>£${order.totalAmount.toFixed(2)}</span></div>
-        </div>`;
+        </div>
+    `;
     
-    pageOrderDetail.innerHTML = contentHtml;
-    
+    // --- THIS IS THE UPDATED LOGIC ---
     const returnWindow = appConfig?.returns?.returnWindowInDays ?? 28;
     const daysSinceOrder = (new Date() - new Date(order.orderDate)) / (1000 * 3600 * 24);
-    const itemsContainer = document.getElementById('order-items-container');
 
     if (daysSinceOrder <= returnWindow) {
-        const returnFormHtml = `
-            <form id="direct-return-form" class="detail-card">
-                <h4>Request a Return</h4>
-                <p>This order is eligible for return. Please select the items you wish to return.</p>
-                <div class="form-group">
-                ${order.items.map(item => `
-                    <div class="return-item-control">
-                        <div class="form-group-checkbox">
-                            <input type="checkbox" name="return-item" id="return-item-${item.productId}" value="${item.productId}">
-                            <label for="return-item-${item.productId}">${item.title}</label>
-                        </div>
-                        <div class="quantity-selector-inline" style="display: none;">
-                            <button type="button" class="quantity-btn decrease-return-qty" data-product-id="${item.productId}">-</button>
-                            <input type="number" class="quantity-input-return" id="return-qty-${item.productId}" value="1" min="1" max="${item.quantity}" readonly>
-                            <button type="button" class="quantity-btn increase-return-qty" data-product-id="${item.productId}">+</button>
-                        </div>
-                        <p class="return-price">£${item.price.toFixed(2)} ea</p>
-                    </div>
-                `).join('')}
-                </div>
-                <div class="form-group" id="return-reason-group" style="display: none;">
-                    <label for="return-reason">Reason for return:</label>
-                    <textarea id="return-reason" rows="10" required></textarea>
-                </div>
-                <div id="return-subtotal-display" class="order-summary-total" style="display: none; border-top: 1px solid var(--border-color); margin-top:0; padding-top:0.5rem;">
-                    <span>Refund Subtotal</span><span id="refund-amount">£0.00</span>
-                </div>
-              <div style="text-align: right; margin-top: 1rem;">
-    <button type="submit" id="submit-return-btn" class="btn-link" disabled>Submit Return Request</button>
-</div>
-            </form>`;
-        itemsContainer.insertAdjacentHTML('afterend', returnFormHtml);
-
-        const returnForm = document.getElementById('direct-return-form');
-        const reasonGroup = document.getElementById('return-reason-group');
-        const submitBtn = document.getElementById('submit-return-btn');
-        const subtotalDisplay = document.getElementById('return-subtotal-display');
-        const refundAmountEl = document.getElementById('refund-amount');
-
-        const validateReturnForm = () => {
-            let refundSubtotal = 0;
-            let anyChecked = false;
-            const returnItemControls = returnForm.querySelectorAll('.return-item-control');
-
-            returnItemControls.forEach(control => {
-                const checkbox = control.querySelector('input[name="return-item"]');
-                const quantitySelector = control.querySelector('.quantity-selector-inline');
-                const productId = checkbox.value;
-                const quantityInput = document.getElementById(`return-qty-${productId}`);
-
-                if (checkbox.checked) {
-                    anyChecked = true;
-                    quantitySelector.style.display = 'flex';
-                    const item = order.items.find(i => i.productId === productId);
-                    if (item && quantityInput) {
-                        refundSubtotal += item.price * parseInt(quantityInput.value, 10);
-                    }
-                } else {
-                    quantitySelector.style.display = 'none';
-                }
-            });
-
-            reasonGroup.style.display = anyChecked ? 'block' : 'none';
-            subtotalDisplay.style.display = anyChecked ? 'flex' : 'none';
-            if(anyChecked) refundAmountEl.textContent = `£${refundSubtotal.toFixed(2)}`;
-            submitBtn.disabled = !anyChecked;
-        };
-
-        // This is the single, consolidated event listener for all form interactions
-        returnForm.addEventListener('click', (e) => {
-            const target = e.target;
-            
-            // Handle checkbox and label clicks
-            const isCheckbox = target.matches('input[type="checkbox"]');
-            const isLabel = target.matches('label');
-            const isReturnControl = target.closest('.return-item-control');
-            
-            if (isReturnControl && (isCheckbox || isLabel)) {
-                const checkbox = isReturnControl.querySelector('input[type="checkbox"]');
-                if (isLabel) {
-                    checkbox.checked = !checkbox.checked;
-                }
-                validateReturnForm();
-                return;
-            }
-            
-            // Handle quantity button clicks
-            if (target.classList.contains('decrease-return-qty') || target.classList.contains('increase-return-qty')) {
-                const productId = target.dataset.productId;
-                const quantityInput = document.getElementById(`return-qty-${productId}`);
-                let val = parseInt(quantityInput.value, 10);
-                const max = parseInt(quantityInput.max, 10);
-
-                if (target.classList.contains('decrease-return-qty') && val > 1) {
-                    quantityInput.value = val - 1;
-                } else if (target.classList.contains('increase-return-qty') && val < max) {
-                    quantityInput.value = val + 1;
-                }
-                validateReturnForm();
-                return;
-            }
-        });
-        
-        // This is the dedicated event listener for the submit button
-        submitBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-
-            // Perform final validation before submission
-            const reason = document.getElementById('return-reason').value;
-            const checkedBoxes = returnForm.querySelectorAll('input[name="return-item"]:checked');
-            const selectedItems = Array.from(checkedBoxes).map(cb => {
-                const productId = cb.value;
-                const quantity = parseInt(document.getElementById(`return-qty-${productId}`).value, 10);
-                const item = order.items.find(i => i.productId === productId);
-                return { ...item, quantity };
-            }).filter(item => item.quantity > 0);
-
-            if (selectedItems.length === 0) {
-                showConfirmationModal('Please select at least one item to return.');
-                return;
-            }
-            if (reason.trim() === '') {
-                showConfirmationModal('Please provide a reason for the return.');
-                return;
-            }
-
-            // If all checks pass, proceed with submission
-            const refundAmount = selectedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-            const newReturn = {
-                id: `RET-${Date.now()}`,
-                orderId: order.id,
-                requestDate: new Date().toISOString(),
-                status: "Pending",
-                reason: reason,
-                items: selectedItems.map(item => `${item.title} (x${item.quantity})`),
-                refundAmount: refundAmount
-            };
-            userReturns.unshift(newReturn);
-            showConfirmationModal(`Your return request for £${refundAmount.toFixed(2)} has been submitted.`, () => renderMyReturnsPage(true));
-        });
-
+        // If eligible, add the new, simpler link to the bottom of the HTML
+        contentHtml += `
+            <div class="return-trigger-note">
+                <a href="#" id="show-return-form-btn" class="btn-link">Need to return an item?</a>
+            </div>`;
     } else {
-        const ineligibleHtml = `
+        // Otherwise, add the "window closed" message
+        contentHtml += `
             <div class="return-ineligible-note detail-card">
                 <h4>Return Window Closed</h4>
-                <p>This order was placed more than 28 days ago and is no longer eligible for return.</p>
+                <p>This order was placed more than ${returnWindow} days ago and is no longer eligible for return.</p>
             </div>`;
-        itemsContainer.insertAdjacentHTML('afterend', ineligibleHtml);
     }
     
+    // Render the complete HTML to the page
+    pageOrderDetail.innerHTML = contentHtml;
     showPage('order-detail');
+    
+    // Add the click listener for the link we may have just created
+    const showReturnBtn = document.getElementById('show-return-form-btn');
+    if (showReturnBtn) {
+        // Use { once: true } so the link can only be clicked once
+        showReturnBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            renderAndAttachReturnForm(order);
+        }, { once: true });
+    }
 }
 
 function renderMyAddressesPage() {
@@ -2577,62 +3141,71 @@ function renderAddressForm(addressToEdit) {
 // REPLACE this entire function in app.js
 // REPLACE this entire function in app.js
 
-function handleSaveAddress(e) {
+async function handleSaveAddress(e) {
     e.preventDefault();
     const addressId = document.getElementById('addressId').value;
     const isEditing = !!addressId;
-    const newAddressData = { 
-        id: isEditing ? addressId : Date.now().toString(), 
-        fullName: document.getElementById('fullName').value, 
-        addressLine1: document.getElementById('addressLine1').value, 
-        addressLine2: document.getElementById('addressLine2').value, 
-        city: document.getElementById('city').value, 
-        postcode: document.getElementById('postcode').value, 
-        country: document.getElementById('country').value, 
-        isDefault: document.getElementById('isDefault').checked 
+
+    const newAddressData = {
+        fullName: document.getElementById('fullName').value,
+        addressLine1: document.getElementById('addressLine1').value,
+        addressLine2: document.getElementById('addressLine2').value,
+        city: document.getElementById('city').value,
+        postcode: document.getElementById('postcode').value,
+        country: document.getElementById('country').value,
+        isDefault: document.getElementById('isDefault').checked
     };
-    
-    if (newAddressData.isDefault) { 
-        userAddresses.forEach(addr => addr.isDefault = false); 
-    }
-    
-    if (isEditing) {
-        const addressIndex = userAddresses.findIndex(addr => addr.id === addressId);
-        if (addressIndex > -1) userAddresses[addressIndex] = newAddressData;
-    } else {
-        userAddresses.push(newAddressData);
-    }
 
-    if (!userAddresses.some(addr => addr.isDefault) && userAddresses.length > 0) {
-        userAddresses[0].isDefault = true;
-    }
+    try {
+        if (isEditing) {
+            // This is an UPDATE (PUT) request
+            await fetchWithAuth('/api/addresses', {
+                method: 'PUT',
+                body: JSON.stringify({ addressId, ...newAddressData })
+            });
+        } else {
+            // This is a CREATE (POST) request
+            await fetchWithAuth('/api/addresses', {
+                method: 'POST',
+                body: JSON.stringify(newAddressData)
+            });
+        }
+        
+        // --- THIS IS THE KEY ---
+        // After saving, we re-fetch all addresses to get the latest, most accurate list.
+        userAddresses = await fetchWithAuth('/api/addresses');
+        
+        // Now we can decide where to navigate.
+        if (addressFormReturnPath === 'checkout') {
+            // Find the newly created/edited address to auto-select it.
+            // This is a simple way; a more robust way might be to get the ID back from the API.
+            const savedAddress = userAddresses.find(addr => addr.fullName === newAddressData.fullName && addr.addressLine1 === newAddressData.addressLine1);
+            if (savedAddress) selectedCheckoutAddressId = savedAddress.id;
+            
+            displayCheckoutPage();
+        } else {
+            renderMyAddressesPage();
+        }
+        addressFormReturnPath = null; // Reset for next time
 
-    // --- THIS IS THE FIX ---
-    // If the user was in checkout, automatically select the new address.
-    if (addressFormReturnPath === 'checkout') {
-        selectedCheckoutAddressId = newAddressData.id; // Auto-select the new address
-        displayCheckoutPage();
-    } else {
-        renderMyAddressesPage();
+    } catch (error) {
+        console.error("Failed to save address:", error);
+        showConfirmationModal(`Error saving address: ${error.message}`);
     }
-    addressFormReturnPath = null; // Reset for next time
 }
 
+// REPLACE this function in your public/app.js file
+
+// REPLACE this function in your public/app.js file
+
+// REPLACE this entire function in your public/app.js file
+
+// REPLACE this entire function in your public/app.js file
+
 function renderAccountSettingsPage() {
-    if (!auth.isLoggedIn()) {
-        renderLoginPage();
-        return;
-    }
-
+    if (!auth.isLoggedIn()) { renderLoginPage(); return; }
     const currentUser = auth.getCurrentUser();
-
-    // Defensive Check: If the user object is invalid, prevent a crash.
-    if (!currentUser) {
-        console.error("Error: Inconsistent login state. User is logged in but user object is null.");
-        auth.logout();
-        renderLoginPage();
-        return;
-    }
+    if (!currentUser) { auth.logout(); renderLoginPage(); return; }
 
     const userName = currentUser.name || '';
     const userEmail = currentUser.email || '';
@@ -2640,32 +3213,150 @@ function renderAccountSettingsPage() {
     pageAccountSettings.innerHTML = `
         <div class="page-header"><h2>Account Settings</h2><button class="btn btn-secondary" id="back-to-account">Back to Account</button></div>
         <div class="form-container">
-            <h3>Update Your Details</h3>
             <form id="account-settings-form">
-                <div class="form-group"><label for="account-name">Full Name</label><input type="text" id="account-name" value="${userName}" required></div>
-                <div class="form-group"><label for="account-email">Email Address</label><input type="email" id="account-email" value="${userEmail}" required></div>
+                <h3>Update Your Details</h3>
+                <div class="form-group">
+                    <label for="account-name">Full Name</label>
+                    <input type="text" id="account-name" value="${userName}" required>
+                </div>
+                <div class="form-group">
+                    <label for="account-email">Email Address</label>
+                    <input type="email" id="account-email" value="${userEmail}" readonly>
+                    <small>Email address cannot be changed.</small>
+                </div>
                 <hr style="margin: 2rem 0;">
-                <h3>Change Password (Demo)</h3>
-                <div class="form-group"><label for="new-password">New Password</label><input type="password" id="new-password" placeholder="Not functional"></div>
+                <h3>Change Password</h3>
+                <div class="form-group">
+                    <label for="current-password">Current Password</label>
+                    
+                    <input type="password" id="current-password" placeholder="Enter your current password" autocomplete="current-password" readonly>
                 
-                <button type="submit" class="btn btn-primary btn-full-width">Update Settings</button>
-                
+                </div>
+                <div class="form-group">
+                    <label for="new-password">New Password</label>
+                    <input type="password" id="new-password" placeholder="Enter a new password" autocomplete="new-password">
+                    <div class="password-strength-container">
+                        <div id="change-strength-bar" class="strength-bar"></div>
+                    </div>
+                    <div id="change-strength-text" class="password-strength-text"></div>
+                </div>
+                 <div class="form-group">
+                    <label for="confirm-new-password">Confirm New Password</label>
+                    <input type="password" id="confirm-new-password" placeholder="Re-type the new password" autocomplete="new-password">
+                </div>
+                <button type="submit" id="update-settings-btn" class="btn btn-primary btn-full-width">
+                    <span class="btn-text">Update Settings</span>
+                    <div class="spinner" style="display: none;"></div>
+                </button>
             </form>
         </div>`;
 
     showPage('account-settings');
+
+    // --- CHANGE 2: ADD THIS SCRIPT TO REMOVE 'readonly' ON FOCUS ---
+    const currentPasswordInput = document.getElementById('current-password');
+    if (currentPasswordInput) {
+        // As soon as the user focuses on the input, make it editable.
+        currentPasswordInput.addEventListener('focus', () => {
+            currentPasswordInput.removeAttribute('readonly');
+        }, { once: true }); // { once: true } makes the listener remove itself after running.
+    }
+    // -----------------------------------------------------------------
+
+    const newPasswordInput = document.getElementById('new-password');
+    const strengthBar = document.getElementById('change-strength-bar');
+    const strengthText = document.getElementById('change-strength-text');
+
+    newPasswordInput.addEventListener('input', () => {
+        const password = newPasswordInput.value;
+        const { score, feedback } = checkPasswordStrength(password);
+        
+        strengthBar.className = 'strength-bar';
+        if (password.length > 0) {
+            if (score <= 1) strengthBar.classList.add('weak');
+            else if (score === 2) strengthBar.classList.add('medium');
+            else strengthBar.classList.add('strong');
+        }
+        strengthText.textContent = password.length > 0 ? feedback : '';
+    });
+
     document.getElementById('account-settings-form').addEventListener('submit', handleUpdateAccount);
 }
 
-function handleUpdateAccount(e) {
+
+async function handleUpdateAccount(e) {
     e.preventDefault();
     const name = document.getElementById('account-name').value;
-    const email = document.getElementById('account-email').value;
-    if (auth.updateUser({ name, email })) { showConfirmationModal('Account updated successfully!'); renderAccountPage(); }
-    else { showConfirmationModal('Failed to update account.'); }
+    const currentPassword = document.getElementById('current-password').value;
+    const newPassword = document.getElementById('new-password').value;
+    const confirmNewPassword = document.getElementById('confirm-new-password').value;
+
+    const updateBtn = document.getElementById('update-settings-btn');
+    const btnText = updateBtn.querySelector('.btn-text');
+    const spinner = updateBtn.querySelector('.spinner');
+
+    updateBtn.disabled = true;
+    btnText.style.display = 'none';
+    spinner.style.display = 'block';
+
+    // --- SIMPLIFIED LOGIC START ---
+    let successMessages = [];
+    let errorMessages = [];
+    let changesMade = false;
+    // --- SIMPLIFIED LOGIC END ---
+
+    // 1. Handle Name Update
+    const currentUser = auth.getCurrentUser();
+    if (name && name.trim() !== '' && name !== currentUser.name) {
+        const nameResult = await auth.updateUser({ name });
+        if (nameResult.success) {
+            successMessages.push("Name updated successfully.");
+            changesMade = true;
+        } else {
+            errorMessages.push(`Failed to update name: ${nameResult.message}`);
+        }
+    }
+
+    // 2. Handle Password Change
+    if (currentPassword || newPassword || confirmNewPassword) {
+        if (!currentPassword || !newPassword || !confirmNewPassword) {
+            errorMessages.push("To change your password, you must fill in all three password fields.");
+        } else if (newPassword.length < 8 || !newPassword.match(/[0-9]/)) {
+            errorMessages.push("New password must be at least 8 characters long and contain at least one number.");
+        } else if (newPassword !== confirmNewPassword) {
+            errorMessages.push("The new passwords do not match.");
+        } else {
+            const passwordResult = await auth.changePassword(currentPassword, newPassword);
+            if (passwordResult.success) {
+                successMessages.push("Password changed successfully.");
+                changesMade = true;
+                // Clear password fields for security
+                document.getElementById('current-password').value = '';
+                document.getElementById('new-password').value = '';
+                document.getElementById('confirm-new-password').value = '';
+                // Manually clear the strength bar
+                const strengthBar = document.getElementById('change-strength-bar');
+                if (strengthBar) strengthBar.className = 'strength-bar';
+            } else {
+                errorMessages.push(`Password change failed: ${passwordResult.message}`);
+            }
+        }
+    }
+
+    // 3. Reset the UI
+    updateBtn.disabled = false;
+    btnText.style.display = 'inline';
+    spinner.style.display = 'none';
+
+    // 4. Provide Clear and Accurate Feedback
+    if (errorMessages.length > 0) {
+        showConfirmationModal(errorMessages.join('\n'));
+    } else if (changesMade) {
+        showConfirmationModal(successMessages.join('\n'));
+    } else {
+        showConfirmationModal("No changes were made.");
+    }
 }
-
-
 // --------------------------------------------------------------------- //
 // -------------------- KIT: CREATE YOUR OWN HAMPER ----------------- //
 // --------------------------------------------------------------------- //
