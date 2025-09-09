@@ -1,4 +1,5 @@
-const CACHE_NAME = 'luxury-hampers-cache-v30'; // Increment version for update
+// Every time you deploy, you MUST increment this version number
+const CACHE_NAME = 'luxury-hampers-cache-v32'; 
 
 const urlsToCache = [
     '/',
@@ -8,10 +9,8 @@ const urlsToCache = [
     '/auth.js',
     '/manifest.json',
     // Data files
-    
     '/data/occasions.json',
     '/data/Header_nav.json',
-  
     '/data/footer_info.json',
     // Page content files
     '/data/pages/about_us.json',
@@ -26,8 +25,7 @@ const urlsToCache = [
     // Images
     '/assets/images/hero_main_banner.jpg',
     '/assets/images/occasion_birthday.jpg',
-    '/assets/images/occasion_anniversary.jpg',
-    // ... other images
+    '/assets/images/occasion_anniversary.jpg'
 ];
 
 self.addEventListener('install', event => {
@@ -37,22 +35,9 @@ self.addEventListener('install', event => {
                 console.log('Opened cache');
                 return cache.addAll(urlsToCache.map(url => new Request(url, {cache: 'reload'})));
             })
-    );
-});
-
-self.addEventListener('fetch', event => {
-    event.respondWith(
-        caches.match(event.request)
-            .then(response => {
-                return response || fetch(event.request).then(networkResponse => {
-                return caches.open(CACHE_NAME).then(cache => {
-    // FIX: Only cache GET requests
-    if (event.request.method === 'GET' && !event.request.url.startsWith('chrome-extension://')) {
-        cache.put(event.request, networkResponse.clone());
-    }
-    return networkResponse;
-});
-                });
+            .then(() => {
+                // Force the new service worker to become active immediately
+                return self.skipWaiting();
             })
     );
 });
@@ -68,6 +53,28 @@ self.addEventListener('activate', event => {
                     }
                 })
             );
+        }).then(() => {
+            // Tell the new service worker to take control of the page
+            return self.clients.claim();
         })
+    );
+});
+
+self.addEventListener('fetch', event => {
+    // We only want to cache GET requests.
+    if (event.request.method !== 'GET') {
+        return;
+    }
+
+    event.respondWith(
+        caches.match(event.request)
+            .then(response => {
+                return response || fetch(event.request).then(networkResponse => {
+                    return caches.open(CACHE_NAME).then(cache => {
+                        cache.put(event.request, networkResponse.clone());
+                        return networkResponse;
+                    });
+                });
+            })
     );
 });
