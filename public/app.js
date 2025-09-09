@@ -221,7 +221,11 @@ const CLICK_HANDLERS = [
         showAllProducts(); 
     } 
 },
-    { selector: '#orders-back-to-account, #addresses-back-to-account, #returns-back-to-account, #back-to-account, #wishlist-back-to-account', handler: renderAccountPage },
+    // Replace the old handler with this one
+{
+    selector: '#orders-back-to-account, #addresses-back-to-account, #returns-back-to-account, #back-to-account, #wishlist-back-to-account',
+    handler: () => router.navigate('/account')
+},
     { selector: '.view-order-details', handler: (target) => renderOrderDetailPage(target.dataset.orderId) },
     { selector: '#back-to-orders', handler: renderMyOrdersPage },
     { selector: '#add-new-address-main', handler: () => { addressFormReturnPath = 'account'; renderAddressForm(); } },
@@ -3138,12 +3142,18 @@ function renderAddressForm(addressToEdit) {
         <div class="page-header"><h2>${isEditing ? 'Edit Address' : 'Add New Address'}</h2><button class="btn btn-secondary" id="back-to-addresses">Cancel</button></div>
         <div class="form-container">
             <form id="address-form">
-                // ... your form inputs ...
+                <input type="hidden" id="addressId" value="${isEditing ? addressToEdit.id : ''}">
+                <div class="form-group"><label for="fullName">Full Name</label><input type="text" id="fullName" value="${isEditing ? addressToEdit.fullName : ''}" required></div>
+                <div class="form-group"><label for="addressLine1">Address Line 1</label><input type="text" id="addressLine1" value="${isEditing ? addressToEdit.addressLine1 : ''}" required></div>
+                <div class="form-group"><label for="addressLine2">Address Line 2 (Optional)</label><input type="text" id="addressLine2" value="${isEditing && addressToEdit.addressLine2 ? addressToEdit.addressLine2 : ''}"></div>
+                <div class="form-group"><label for="city">Town / City</label><input type="text" id="city" value="${isEditing ? addressToEdit.city : ''}" required></div>
+                <div class="form-group"><label for="postcode">Postcode</label><input type="text" id="postcode" value="${isEditing ? addressToEdit.postcode : ''}" required></div>
+                <div class="form-group"><label for="country">Country</label><input type="text" id="country" value="${isEditing ? addressToEdit.country : 'UK'}" required></div>
+                <div class="form-group form-group-checkbox"><input type="checkbox" id="isDefault" ${isEditing && addressToEdit.isDefault ? 'checked' : ''}><label for="isDefault">Set as default</label></div>
                 <button type="submit" class="btn btn-primary btn-full-width">Save Address</button>
             </form>
         </div>`;
     showPage('address-form');
-  
 }
 
 
