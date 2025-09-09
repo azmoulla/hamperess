@@ -546,24 +546,27 @@ function createSlug(text) {
 
 // In app.js
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => { // Make the function async
     console.log("DOM content loaded. Initializing app...");
 
-    // 1. Setup core UI and load cart from storage
+    // 1. FIX: Fetch critical config first and wait for it
+    await fetchConfig();
+
+    // 2. Setup core UI and load cart (which can now safely use appConfig)
     setupEventListeners();
     updateHeaderIcons();
     loadCart();
 
-    // 2. Define all application routes FIRST
+    // 3. Define all application routes FIRST
     defineRoutes();
 
-    // 3. Initialize the router so it can handle the initial page load
-    router.init(); 
+    // 4. Initialize the router so it can handle the initial page load
+    router.init();
 
-    // 4. Start fetching all other data in the background
+    // 5. Start fetching all OTHER data in the background
     const startupTasks = [
         fetchProducts(), fetchDiscounts(), fetchMenu(), fetchFooterInfo(),
-        fetchOccasions(), fetchFeatures(), fetchTestimonials(), fetchConfig()
+        fetchOccasions(), fetchFeatures(), fetchTestimonials() // Remove fetchConfig() from here
     ];
     Promise.allSettled(startupTasks).then(() => {
         console.log("Background data loading has completed.");
@@ -676,6 +679,12 @@ function setupEventListeners() {
     window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('resize', manageFilterLocation);
     window.addEventListener('authchange', handleAuthStateChange);
+      pageAddressForm.addEventListener('submit', (e) => {
+        // Check if the submission came from our specific form
+        if (e.target && e.target.id === 'address-form') {
+            handleSaveAddress(e);
+        }
+    });
 // (Inside the setupEventListeners function in app.js)
 // THIS IS THE NEW, CORRECTED CODE
 window.addEventListener('wishlistChange', () => {
@@ -2367,10 +2376,15 @@ function updateCartTotals() {
     let deliveryCharge = 0;
     let discountAmount = 0;
 
-    if (totalItems > 0 && subtotal < appConfig.delivery.freeDeliveryThreshold) {
-        deliveryCharge = appConfig.delivery.baseCharge; 
+    // FIX: Use optional chaining and provide default fallback values
+    const freeDeliveryThreshold = appConfig?.delivery?.freeDeliveryThreshold ?? 50;
+    const baseCharge = appConfig?.delivery?.baseCharge ?? 4.99;
+    const additionalItemCharge = appConfig?.delivery?.additionalItemCharge ?? 1.00;
+
+    if (totalItems > 0 && subtotal < freeDeliveryThreshold) {
+        deliveryCharge = baseCharge;
         if (totalItems > 1) {
-            deliveryCharge += (totalItems - 1) * appConfig.delivery.additionalItemCharge;
+            deliveryCharge += (totalItems - 1) * additionalItemCharge;
         }
     }
 
@@ -3124,22 +3138,14 @@ function renderAddressForm(addressToEdit) {
         <div class="page-header"><h2>${isEditing ? 'Edit Address' : 'Add New Address'}</h2><button class="btn btn-secondary" id="back-to-addresses">Cancel</button></div>
         <div class="form-container">
             <form id="address-form">
-                <input type="hidden" id="addressId" value="${isEditing ? addressToEdit.id : ''}">
-                <div class="form-group"><label for="fullName">Full Name</label><input type="text" id="fullName" value="${isEditing ? addressToEdit.fullName : ''}" required></div>
-                <div class="form-group"><label for="addressLine1">Address Line 1</label><input type="text" id="addressLine1" value="${isEditing ? addressToEdit.addressLine1 : ''}" required></div>
-                <div class="form-group"><label for="addressLine2">Address Line 2 (Optional)</label><input type="text" id="addressLine2" value="${isEditing && addressToEdit.addressLine2 ? addressToEdit.addressLine2 : ''}"></div>
-                <div class="form-group"><label for="city">Town / City</label><input type="text" id="city" value="${isEditing ? addressToEdit.city : ''}" required></div>
-                <div class="form-group"><label for="postcode">Postcode</label><input type="text" id="postcode" value="${isEditing ? addressToEdit.postcode : ''}" required></div>
-                <div class="form-group"><label for="country">Country</label><input type="text" id="country" value="${isEditing ? addressToEdit.country : 'UK'}" required></div>
-                <div class="form-group form-group-checkbox"><input type="checkbox" id="isDefault" ${isEditing && addressToEdit.isDefault ? 'checked' : ''}><label for="isDefault">Set as default</label></div>
+                // ... your form inputs ...
                 <button type="submit" class="btn btn-primary btn-full-width">Save Address</button>
             </form>
         </div>`;
     showPage('address-form');
-    document.getElementById('address-form').addEventListener('submit', handleSaveAddress);
+  
 }
-// REPLACE this entire function in app.js
-// REPLACE this entire function in app.js
+
 
 async function handleSaveAddress(e) {
     e.preventDefault();

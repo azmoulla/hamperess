@@ -45,12 +45,13 @@ self.addEventListener('fetch', event => {
         caches.match(event.request)
             .then(response => {
                 return response || fetch(event.request).then(networkResponse => {
-                    return caches.open(CACHE_NAME).then(cache => {
-                        if (!event.request.url.startsWith('chrome-extension://')) {
-                            cache.put(event.request, networkResponse.clone());
-                        }
-                        return networkResponse;
-                    });
+                return caches.open(CACHE_NAME).then(cache => {
+    // FIX: Only cache GET requests
+    if (event.request.method === 'GET' && !event.request.url.startsWith('chrome-extension://')) {
+        cache.put(event.request, networkResponse.clone());
+    }
+    return networkResponse;
+});
                 });
             })
     );
