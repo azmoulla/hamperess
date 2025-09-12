@@ -1,7 +1,7 @@
 // FILE: public/service-worker.js
 
 // 1. IMPORTANT: Increment the version number one last time.
-const CACHE_NAME = 'luxury-hampers-cache-v32'; // Or any number higher than your current one
+const CACHE_NAME = 'luxury-hampers-cache-v33'; // Or any number higher than your current one
 
 const urlsToCache = [
     '/',
@@ -40,21 +40,25 @@ self.addEventListener('install', event => {
 });
 
 // --- CACHING STRATEGY FIX ---
-// This listener now correctly handles API calls and static assets differently.
+// REPLACE the existing 'fetch' event listener with this entire block.
 self.addEventListener('fetch', event => {
+    // --- THIS IS THE FIX ---
+    // Only apply caching strategies to GET requests. Ignore all others (POST, etc.)
+    if (event.request.method !== 'GET') {
+        return;
+    }
+
     // For API calls, use a "Network-First" strategy.
     if (event.request.url.includes('/api/')) {
         event.respondWith(
-            // Try to fetch from the network.
             fetch(event.request).catch(() => {
-                // If the network fails (e.g., offline), then try to get it from the cache.
                 return caches.match(event.request);
             })
         );
-        return; // End execution for API calls.
+        return;
     }
 
-    // For all other requests (static assets), use the "Cache-First" strategy.
+    // For all other GET requests (static assets), use the "Cache-First" strategy.
     event.respondWith(
         caches.match(event.request)
             .then(response => {

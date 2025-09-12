@@ -190,6 +190,34 @@ const CLICK_HANDLERS = [
         }
     }
 },
+{
+    selector: '.cancel-return-btn',
+    handler: (target) => {
+        const returnId = target.dataset.returnId;
+        showConfirmationModal('Are you sure you want to cancel this return request?', async () => {
+            try {
+                // 1. Sends the correct PUT request to the back end
+                await fetchWithAuth(`/api/returns?returnId=${returnId}`, {
+                    method: 'PUT'
+                });
+
+                // 2. Finds the return in the local list and updates its status
+                const returnToUpdate = userReturns.find(ret => ret.id === returnId);
+                if (returnToUpdate) {
+                    returnToUpdate.status = 'Cancelled';
+                }
+                
+                // 3. Re-renders the page to show the new status immediately
+                renderMyReturnsPage();
+                showConfirmationModal('Your return request has been cancelled.');
+
+            } catch (error) {
+                console.error('Failed to cancel return:', error);
+                showConfirmationModal(`Error: ${error.message}`);
+            }
+        });
+    }
+},
       {
         selector: '#place-order-btn',
         handler: (target, e) => {
@@ -465,10 +493,11 @@ function checkPasswordStrength(password) {
 const router = {
     routes: {},
     currentPath: '',
-    init() {
-        window.addEventListener('hashchange', () => this.handleRouteChange());
-        window.addEventListener('load', () => this.handleRouteChange());
-    },
+   init() {
+    // Only listen for hash changes. The initial page render is now correctly
+    // handled after the user data has been fetched.
+    window.addEventListener('hashchange', () => this.handleRouteChange());
+},
     addRoute(path, handler) { this.routes[path] = handler; },
     handleRouteChange() {
         const path = (window.location.hash.slice(1) || '/').split('?')[0];
@@ -550,6 +579,7 @@ function createSlug(text) {
 
 // In app.js
 
+// In app.js
 document.addEventListener('DOMContentLoaded', async () => { // Make the function async
     console.log("DOM content loaded. Initializing app...");
 
@@ -560,6 +590,7 @@ document.addEventListener('DOMContentLoaded', async () => { // Make the function
     setupEventListeners();
     updateHeaderIcons();
     loadCart();
+    initializePushNotifications();
 
     // 3. Define all application routes FIRST
     defineRoutes();
@@ -900,28 +931,29 @@ async function fetchData(url) {
 
 // REPLACE this entire function in your public/app.js file
 
+// REPLACE your entire existing fetchInitialUserData function with this one.
+
 async function fetchInitialUserData() {
     if (auth.isLoggedIn()) {
         try {
-            console.log("Fetching user data (addresses and orders)...");
+            console.log("Fetching user data (addresses, orders, and returns)...");
             
-            // --- THIS IS THE FIX ---
-            // We use Promise.allSettled to ensure that if one API call fails,
-            // the others can still succeed. This is much more resilient.
             const results = await Promise.allSettled([
                 fetchWithAuth('/api/addresses'),
-                fetchWithAuth('/api/get-orders')
+                fetchWithAuth('/api/get-orders'),
+                fetchWithAuth('/api/returns') // <-- ADDED: The call to fetch returns
             ]);
 
             const addressesResult = results[0];
             const ordersResult = results[1];
+            const returnsResult = results[2]; // <-- ADDED: Get the result for the returns call
 
             if (addressesResult.status === 'fulfilled') {
                 userAddresses = addressesResult.value;
                 console.log("Successfully fetched addresses:", userAddresses.length);
             } else {
                 console.error("Failed to fetch user addresses:", addressesResult.reason);
-                userAddresses = []; // Default to empty on error
+                userAddresses = [];
             }
 
             if (ordersResult.status === 'fulfilled') {
@@ -929,14 +961,24 @@ async function fetchInitialUserData() {
                 console.log("Successfully fetched orders:", userOrders.length);
             } else {
                 console.error("Failed to fetch user orders:", ordersResult.reason);
-                userOrders = []; // Default to empty on error
+                userOrders = [];
             }
+
+            // --- ADDED: This block processes the result of the returns API call ---
+            if (returnsResult.status === 'fulfilled') {
+                userReturns = returnsResult.value;
+                console.log("Successfully fetched returns:", userReturns.length);
+            } else {
+                console.error("Failed to fetch user returns:", returnsResult.reason);
+                userReturns = [];
+            }
+            // --- END ADDED BLOCK ---
             
         } catch (error) {
-            // This outer catch is a final safety net.
             console.error("A critical error occurred during initial user data fetch:", error);
             userAddresses = [];
             userOrders = [];
+            userReturns = []; // Ensure returns is also cleared on a critical error
         }
     } else {
         // Clear data for logged-out users
@@ -2371,59 +2413,34 @@ function applyDiscount(code, source = 'checkout') {
     updateCartTotals();
 }
 
-
-
-// In app.js
 function updateCartTotals() {
-    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-    let deliveryCharge = 0;
-    let discountAmount = 0;
-
-    // FIX: Use optional chaining and provide default fallback values
-    const freeDeliveryThreshold = appConfig?.delivery?.freeDeliveryThreshold ?? 50;
-    const baseCharge = appConfig?.delivery?.baseCharge ?? 4.99;
-    const additionalItemCharge = appConfig?.delivery?.additionalItemCharge ?? 1.00;
-
-    if (totalItems > 0 && subtotal < freeDeliveryThreshold) {
-        deliveryCharge = baseCharge;
-        if (totalItems > 1) {
-            deliveryCharge += (totalItems - 1) * additionalItemCharge;
-        }
-    }
-
-    if (appliedDiscount) {
-        if (appliedDiscount.type === 'percent') {
-            discountAmount = (subtotal * appliedDiscount.value) / 100;
-        } else if (appliedDiscount.type === 'fixed') {
-            discountAmount = appliedDiscount.value;
-        } else if (appliedDiscount.type === 'shipping') {
-            deliveryCharge = 0;
-        }
-    }
-
-    const grandTotal = subtotal + deliveryCharge - discountAmount;
+    // This function now uses the central calculateTotals helper
+    const { itemsSubtotal, deliveryChargeApplied, discountApplied, totalAmount } = calculateTotals();
 
     // Update Side Cart
-    document.getElementById('cart-subtotal').textContent = `£${subtotal.toFixed(2)}`;
-    document.getElementById('cart-delivery').textContent = `£${deliveryCharge.toFixed(2)}`;
-    document.getElementById('cart-total').textContent = `£${grandTotal.toFixed(2)}`;
+    const cartSubtotalEl = document.getElementById('cart-subtotal');
+    const cartDeliveryEl = document.getElementById('cart-delivery');
+    const cartTotalEl = document.getElementById('cart-total');
+    if(cartSubtotalEl) cartSubtotalEl.textContent = `£${itemsSubtotal.toFixed(2)}`;
+    if(cartDeliveryEl) cartDeliveryEl.textContent = `£${deliveryChargeApplied.toFixed(2)}`;
+    if(cartTotalEl) cartTotalEl.textContent = `£${Math.max(0, totalAmount).toFixed(2)}`;
+    
     const cartDiscountRow = document.querySelector('#side-cart .discount-row');
     if (cartDiscountRow) {
         cartDiscountRow.style.display = appliedDiscount ? 'flex' : 'none';
-        document.getElementById('cart-discount').textContent = `-£${discountAmount.toFixed(2)}`;
+        document.getElementById('cart-discount').textContent = `-£${discountApplied.toFixed(2)}`;
     }
 
     // Update Checkout Page
     const checkoutTotalEl = document.getElementById('checkout-total');
     if (checkoutTotalEl) {
-        document.getElementById('checkout-subtotal').textContent = `£${subtotal.toFixed(2)}`;
-        document.getElementById('checkout-delivery').textContent = `£${deliveryCharge.toFixed(2)}`;
-        checkoutTotalEl.textContent = `£${grandTotal.toFixed(2)}`;
+        document.getElementById('checkout-subtotal').textContent = `£${itemsSubtotal.toFixed(2)}`;
+        document.getElementById('checkout-delivery').textContent = `£${deliveryChargeApplied.toFixed(2)}`;
+        checkoutTotalEl.textContent = `£${Math.max(0, totalAmount).toFixed(2)}`;
         const checkoutDiscountRow = document.querySelector('#page-checkout .discount-row');
         if (checkoutDiscountRow) {
             checkoutDiscountRow.style.display = appliedDiscount ? 'flex' : 'none';
-            document.getElementById('checkout-discount').textContent = `-£${discountAmount.toFixed(2)}`;
+            document.getElementById('checkout-discount').textContent = `-£${discountApplied.toFixed(2)}`;
         }
     }
 }
@@ -2527,7 +2544,12 @@ function displayCheckoutPage() {
         case 3:
             const finalAddress = isLoggedIn ? userAddresses.find(a => a.id === selectedCheckoutAddressId) : { fullName: guestDetails.name, addressLine1: guestDetails.addressLine1, city: guestDetails.city, postcode: guestDetails.postcode };
             stepContentHtml = `<h3>3. Review Order</h3><div class="review-section"><h4>Shipping to:</h4><p>${finalAddress.fullName}<br>${finalAddress.addressLine1}<br>${finalAddress.city}, ${finalAddress.postcode}</p></div><div class="review-section"><h4>Payment Method:</h4><p>Card ending in 4444 (Demo)</p></div>`;
-            actionButtonHtml = `<button id="place-order-btn" class="btn btn-primary btn-full-width">Place Order</button><a href="#" id="checkout-back-btn" class="back-link">Go Back</a>`;
+            actionButtonHtml = `
+        <button id="place-order-btn" class="btn btn-primary btn-full-width">
+            <span class="btn-text">Place Order</span>
+            <div class="spinner" style="display: none;"></div>
+        </button>
+        <a href="#" id="checkout-back-btn" class="back-link">Go Back</a>`;
             break;
     }
 
@@ -2556,70 +2578,51 @@ function displayCheckoutPage() {
 
 
 
+// REPLACE your existing placeOrder function
 async function placeOrder() {
+    const placeOrderBtn = document.getElementById('place-order-btn');
+    const btnText = placeOrderBtn.querySelector('.btn-text');
+    const spinner = placeOrderBtn.querySelector('.spinner');
+
+    placeOrderBtn.disabled = true;
+    btnText.style.display = 'none';
+    spinner.style.display = 'block';
+
     try {
-        // --- THIS IS THE NEW VERIFICATION CHECK ---
         if (auth.isLoggedIn() && !auth.isVerified()) {
-            showConfirmationModal("Please check your inbox and verify your email address before placing an order.");
-            return; // Stop the function immediately
+            throw new Error("Please check your inbox and verify your email address before placing an order.");
         }
-        if (cart.length === 0) return showConfirmationModal('Your cart is empty.');
+        if (cart.length === 0) throw new Error('Your cart is empty.');
         
         const isLoggedIn = auth.isLoggedIn();
-
-        // --- THIS IS THE TRIAGE LOGIC ---
         if (!isLoggedIn) {
-            // If user is a guest, call the dedicated guest function and stop here.
+            // This is a safeguard; this function should only be called for logged-in users now.
             return placeGuestOrder(); 
         }
-        // --- END TRIAGE LOGIC ---
 
-        // If the code reaches here, the user is logged in. Proceed as normal.
         const currentUser = auth.getCurrentUser();
         const selectedAddress = userAddresses.find(addr => addr.id === selectedCheckoutAddressId);
-        if (!selectedAddress) return showConfirmationModal('Please select a delivery address.');
+        if (!selectedAddress) throw new Error('Please select a delivery address.');
         
-        // (The rest of the original placeOrder function for logged-in users remains exactly the same)
-        const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-        let deliveryCharge = 0;
-        let discountAmount = 0;
-        if (totalItems > 0 && subtotal < appConfig.delivery.freeDeliveryThreshold) {
-            deliveryCharge = appConfig.delivery.baseCharge;
-            if (totalItems > 1) deliveryCharge += (totalItems - 1) * appConfig.delivery.additionalItemCharge;
-        }
-        if (appliedDiscount) {
-            if (appliedDiscount.type === 'percent') discountAmount = (subtotal * appliedDiscount.value) / 100;
-            else if (appliedDiscount.type === 'fixed') discountAmount = appliedDiscount.value;
-            else if (appliedDiscount.type === 'shipping') deliveryCharge = 0;
-        }
+        const { itemsSubtotal, deliveryChargeApplied, discountApplied, totalAmount } = calculateTotals();
 
         const orderPayload = {
+            userId: currentUser.uid,
             customerName: selectedAddress.fullName,
+            customerEmail: currentUser.email,
             deliveryAddress: selectedAddress,
-          items: cart.map(item => {
-    const orderItem = {
-        productId: item.id,
-        title: item.title,
-        quantity: item.quantity,
-        price: item.price,
-        isCustom: item.isCustom || false,
-    };
-    // If the item is a custom hamper, also save its contents.
-    if (item.isCustom) {
-        orderItem.contents = item.contents;
-    }
-    return orderItem;
-}),
-            itemsSubtotal: subtotal,
-            deliveryChargeApplied: deliveryCharge,
-            discountApplied: discountAmount,
-            totalAmount: subtotal + deliveryCharge - discountAmount
+            items: cart.map(item => {
+                const orderItem = {
+                    productId: item.id, title: item.title, quantity: item.quantity, price: item.price, isCustom: item.isCustom || false,
+                };
+                if (item.isCustom) orderItem.contents = item.contents;
+                return orderItem;
+            }),
+            itemsSubtotal, deliveryChargeApplied, discountApplied, totalAmount
         };
 
         const result = await fetchWithAuth('/api/create-order', {
-            method: 'POST',
-            body: JSON.stringify({ orderPayload })
+            method: 'POST', body: JSON.stringify({ orderPayload })
         });
         
         userOrders = await fetchWithAuth('/api/get-orders');
@@ -2627,18 +2630,104 @@ async function placeOrder() {
         pageCheckout.innerHTML = `<div class="order-confirmation"><h2>Thank You, ${selectedAddress.fullName.split(' ')[0]}!</h2><p>Your order #${result.orderId} has been placed successfully.</p><button id="back-to-home-btn" class="btn btn-primary btn-full-width">Continue Shopping</button></div>`;
         document.getElementById('back-to-home-btn').addEventListener('click', showAllProducts);
         
-        closeCart();
-        setTimeout(() => {
-            cart = [];
-            appliedDiscount = null;
-            selectedCheckoutAddressId = null;
-            checkoutStep = 1;
-            updateCart();
-        }, 350);
+        cart = []; appliedDiscount = null; selectedCheckoutAddressId = null; checkoutStep = 1;
+        updateCart();
 
     } catch (error) {
         console.error("CRITICAL ERROR in placeOrder:", error);
         showConfirmationModal(`Order Failed: ${error.message}`);
+        // Re-enable the button on failure
+        placeOrderBtn.disabled = false;
+        btnText.style.display = 'inline';
+        spinner.style.display = 'none';
+    }
+}
+
+// Add this entire new function to app.js
+function calculateTotals() {
+    const itemsSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+    let deliveryChargeApplied = 0;
+    let discountApplied = 0;
+
+    // Use optional chaining and provide default fallback values
+    const freeDeliveryThreshold = appConfig?.delivery?.freeDeliveryThreshold ?? 50;
+    const baseCharge = appConfig?.delivery?.baseCharge ?? 4.99;
+    const additionalItemCharge = appConfig?.delivery?.additionalItemCharge ?? 1.00;
+
+    if (totalItems > 0 && itemsSubtotal < freeDeliveryThreshold) {
+        deliveryChargeApplied = baseCharge;
+        if (totalItems > 1) {
+            deliveryChargeApplied += (totalItems - 1) * additionalItemCharge;
+        }
+    }
+
+    if (appliedDiscount) {
+        if (appliedDiscount.type === 'percent') {
+            discountApplied = (itemsSubtotal * appliedDiscount.value) / 100;
+        } else if (appliedDiscount.type === 'fixed') {
+            discountApplied = appliedDiscount.value;
+        } else if (appliedDiscount.type === 'shipping') {
+            // In a shipping discount, the discount amount is the delivery charge itself
+            discountApplied = deliveryChargeApplied;
+            deliveryChargeApplied = 0;
+        }
+    }
+
+    const totalAmount = itemsSubtotal + deliveryChargeApplied - discountApplied;
+    
+    return { itemsSubtotal, deliveryChargeApplied, discountApplied, totalAmount };
+}
+
+// REPLACE your existing placeGuestOrder function
+async function placeGuestOrder() {
+    const placeOrderBtn = document.getElementById('place-order-btn');
+    const btnText = placeOrderBtn.querySelector('.btn-text');
+    const spinner = placeOrderBtn.querySelector('.spinner');
+
+    placeOrderBtn.disabled = true;
+    btnText.style.display = 'none';
+    spinner.style.display = 'block';
+
+    try {
+        const { itemsSubtotal, deliveryChargeApplied, discountApplied, totalAmount } = calculateTotals();
+        const orderPayload = {
+            customerName: guestDetails.name,
+            customerEmail: guestDetails.email,
+            deliveryAddress: {
+                fullName: guestDetails.name, addressLine1: guestDetails.addressLine1,
+                city: guestDetails.city, postcode: guestDetails.postcode
+            },
+            items: cart.map(item => ({
+                productId: item.id, title: item.title, quantity: item.quantity,
+                price: item.price, isCustom: item.isCustom || false
+            })),
+            itemsSubtotal, deliveryChargeApplied, discountApplied, totalAmount
+        };
+
+        const response = await fetch('/api/create-guest-order', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderPayload })
+        });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Guest order submission failed.');
+        }
+        const result = await response.json();
+
+        pageCheckout.innerHTML = `<div class="order-confirmation"><h2>Thank You, ${guestDetails.name.split(' ')[0]}!</h2><p>Your order #${result.orderId} has been placed successfully.</p><button id="back-to-home-btn" class="btn btn-primary btn-full-width">Continue Shopping</button></div>`;
+        document.getElementById('back-to-home-btn').addEventListener('click', showAllProducts);
+        
+        cart = []; guestDetails = {}; appliedDiscount = null; checkoutStep = 1;
+        updateCart();
+
+    } catch (error) {
+        console.error("CRITICAL ERROR in placeGuestOrder:", error);
+        showConfirmationModal(`Order Failed: ${error.message}`);
+        // Re-enable the button on failure
+        placeOrderBtn.disabled = false;
+        btnText.style.display = 'inline';
+        spinner.style.display = 'none';
     }
 }
 
@@ -2702,7 +2791,177 @@ async function placeGuestOrder() {
 // ----------------------------------------------------------------- //
 
 // REPLACE this entire function in your public/app.js file
+// Add this entire function to your app.js file
 
+// In app.js
+// REPLACE your entire existing showReturnRequestPage function with this one.
+
+function showReturnRequestPage(order) {
+    const triggerContainer = document.getElementById('return-trigger-container');
+    if (triggerContainer) triggerContainer.style.display = 'none';
+
+    // First, calculate which items are available for return
+    const returnedQuantities = {};
+    userReturns
+        .filter(r => r.orderId === order.id && r.status !== 'Cancelled' && r.status !== 'Rejected')
+        .flatMap(r => r.items)
+        .forEach(item => {
+            returnedQuantities[item.productId] = (returnedQuantities[item.productId] || 0) + item.quantity;
+        });
+
+    const returnFormHtml = `
+        <form id="direct-return-form" class="detail-card">
+            <h4>Request a Return</h4>
+            <p>Select the items and quantities you wish to return.</p>
+            <div class="form-group">
+            ${order.items.map(item => {
+                const alreadyReturned = returnedQuantities[item.productId] || 0;
+                const returnableQty = item.quantity - alreadyReturned;
+
+                if (returnableQty <= 0) {
+                    return `<div class="return-item-control disabled"><p>✓ <em>${item.title} (Already Returned)</em></p></div>`;
+                }
+                return `
+                <div class="return-item-control">
+                    <div class="form-group-checkbox">
+                        <input type="checkbox" name="return-item" id="return-item-${item.productId}" value="${item.productId}">
+                        <label for="return-item-${item.productId}">${item.title}</label>
+                    </div>
+                    <div class="quantity-selector-inline" style="display: none;">
+                        <button type="button" class="quantity-btn decrease-return-qty" data-product-id="${item.productId}">-</button>
+                        <input type="number" class="quantity-input-return" id="return-qty-${item.productId}" value="1" min="1" max="${returnableQty}" readonly>
+                        <button type="button" class="quantity-btn increase-return-qty" data-product-id="${item.productId}">+</button>
+                    </div>
+                    <p class="return-price">£${item.price.toFixed(2)} ea</p>
+                </div>`;
+            }).join('')}
+            </div>
+            <div class="form-group" id="return-reason-group" style="display: none;">
+                <label for="return-reason">Reason for return:</label>
+                <textarea id="return-reason" rows="6" required></textarea>
+            </div>
+            <div id="return-subtotal-display" class="order-summary-total" style="display: none; border-top: 1px solid var(--border-color); margin-top:0; padding-top:0.5rem;">
+                <span>Refund Subtotal</span><span id="refund-amount">£0.00</span>
+            </div>
+            <div style="text-align: right; margin-top: 1rem;">
+                <button type="submit" id="submit-return-btn" class="btn btn-primary" disabled>
+                    <span class="btn-text">Submit Return Request</span>
+                    <div class="spinner" style="display: none;"></div>
+                </button>
+            </div>
+        </form>`;
+    
+    const oldForm = document.getElementById('direct-return-form');
+    if (oldForm) oldForm.remove();
+    const itemsContainer = document.getElementById('order-items-container');
+    itemsContainer.insertAdjacentHTML('afterend', returnFormHtml);
+
+    const returnForm = document.getElementById('direct-return-form');
+    const reasonGroup = document.getElementById('return-reason-group');
+    const submitBtn = document.getElementById('submit-return-btn');
+    const subtotalDisplay = document.getElementById('return-subtotal-display');
+    const refundAmountEl = document.getElementById('refund-amount');
+
+    const validateReturnForm = () => {
+        let refundSubtotal = 0;
+        let anyChecked = false;
+        const returnItemControls = returnForm.querySelectorAll('.return-item-control');
+
+        returnItemControls.forEach(control => {
+            const checkbox = control.querySelector('input[name="return-item"]');
+            if (!checkbox) return;
+            const quantitySelector = control.querySelector('.quantity-selector-inline');
+            const productId = checkbox.value;
+            const quantityInput = document.getElementById(`return-qty-${productId}`);
+
+            if (checkbox.checked) {
+                anyChecked = true;
+                quantitySelector.style.display = 'flex';
+                const item = order.items.find(i => i.productId === productId);
+                if (item && quantityInput) {
+                    refundSubtotal += item.price * parseInt(quantityInput.value, 10);
+                }
+            } else {
+                if (quantitySelector) quantitySelector.style.display = 'none';
+            }
+        });
+
+        reasonGroup.style.display = anyChecked ? 'block' : 'none';
+        subtotalDisplay.style.display = anyChecked ? 'flex' : 'none';
+        if (anyChecked) refundAmountEl.textContent = `£${refundSubtotal.toFixed(2)}`;
+        submitBtn.disabled = !anyChecked;
+    };
+
+    returnForm.addEventListener('click', (e) => {
+        const target = e.target;
+        if (target.closest('.return-item-control')) {
+            if (target.matches('label')) {
+                const checkbox = document.getElementById(target.getAttribute('for'));
+                if (checkbox) checkbox.checked = !checkbox.checked;
+            }
+            validateReturnForm();
+        }
+        
+        if (target.matches('.decrease-return-qty, .increase-return-qty')) {
+            const productId = target.dataset.productId;
+            const quantityInput = document.getElementById(`return-qty-${productId}`);
+            let val = parseInt(quantityInput.value, 10);
+            const max = parseInt(quantityInput.max, 10);
+
+            if (target.matches('.decrease-return-qty') && val > 1) quantityInput.value = val - 1;
+            else if (target.matches('.increase-return-qty') && val < max) quantityInput.value = val + 1;
+            
+            validateReturnForm();
+        }
+    });
+    
+    returnForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const btnText = submitBtn.querySelector('.btn-text');
+        const spinner = submitBtn.querySelector('.spinner');
+
+        submitBtn.disabled = true;
+        btnText.style.display = 'none';
+        spinner.style.display = 'block';
+        
+        const reason = document.getElementById('return-reason').value;
+        const checkedBoxes = returnForm.querySelectorAll('input[name="return-item"]:checked');
+        
+        if (checkedBoxes.length === 0 || reason.trim() === '') {
+            showConfirmationModal('Please select items and provide a reason.');
+            submitBtn.disabled = false;
+            btnText.style.display = 'inline';
+            spinner.style.display = 'none';
+            return;
+        }
+
+        const selectedItems = Array.from(checkedBoxes).map(cb => {
+            const item = order.items.find(i => i.productId === cb.value);
+            const quantity = parseInt(document.getElementById(`return-qty-${cb.value}`).value, 10);
+            return { ...item, quantity };
+        });
+
+        const refundAmount = selectedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const returnRequestPayload = { orderId: order.id, reason, items: selectedItems, refundAmount };
+
+        try {
+            await fetchWithAuth('/api/returns', {
+                method: 'POST',
+                body: JSON.stringify({ returnRequest: returnRequestPayload })
+            });
+            await fetchInitialUserData();
+            router.navigate('/account/returns');
+            showConfirmationModal(`Your return request has been submitted.`);
+        } catch (error) {
+            console.error("Failed to submit return request:", error);
+            showConfirmationModal(`Error: ${error.message}`);
+            submitBtn.disabled = false;
+            btnText.style.display = 'inline';
+            spinner.style.display = 'none';
+        }
+    });
+}
 function renderAndAttachReturnForm(order) {
     // Hide the 'Request a Return' link that was just clicked
     const triggerContainer = document.getElementById('return-trigger-container');
@@ -2737,7 +2996,10 @@ function renderAndAttachReturnForm(order) {
                 <span>Refund Subtotal</span><span id="refund-amount">£0.00</span>
             </div>
             <div style="text-align: right; margin-top: 1rem;">
-                <button type="submit" id="submit-return-btn" class="btn-link" disabled>Submit Return Request</button>
+                <button type="submit" id="submit-return-btn" class="btn btn-primary" disabled>
+    <span class="btn-text">Submit Return Request</span>
+    <div class="spinner" style="display: none;"></div>
+</button>
             </div>
         </form>`;
     
@@ -2808,6 +3070,15 @@ function renderAndAttachReturnForm(order) {
     
     returnForm.addEventListener('submit', (e) => {
         e.preventDefault();
+        // --- ADD THIS BLOCK TO MANAGE THE BUTTON STATE ---
+    const submitBtn = document.getElementById('submit-return-btn');
+    const btnText = submitBtn.querySelector('.btn-text');
+    const spinner = submitBtn.querySelector('.spinner');
+
+    submitBtn.disabled = true;
+    btnText.style.display = 'none';
+    spinner.style.display = 'block';
+    // --- END OF BLOCK ---
         const reason = document.getElementById('return-reason').value;
         const checkedBoxes = returnForm.querySelectorAll('input[name="return-item"]:checked');
         if (checkedBoxes.length === 0) return showConfirmationModal('Please select at least one item.');
@@ -2887,11 +3158,20 @@ function handleAccountMenuClicks(e) {
 }
 
 // Add this missing function to the "MY ACCOUNT" section in app.js
+// REPLACE this entire function in your app.js file
+
+// REPLACE this entire function in your app.js file
+
 function renderMyReturnsPage() {
-    // Call the new function to update statuses before rendering the page
+    // --- DIAGNOSTIC LOG ---
+    // This will show us the exact data in the userReturns array before the page is built.
+    console.log("Rendering 'My Returns' page with this data:", JSON.parse(JSON.stringify(userReturns)));
+    // --------------------
+
     updateReturnStatuses();
 
     let contentHtml = `<div class="page-header"><h2>My Returns</h2><button class="btn btn-secondary" id="returns-back-to-account">Back to Account</button></div>`;
+    
     if (userReturns.length === 0) {
         contentHtml += `
             <div class="empty-state-container">
@@ -2900,23 +3180,25 @@ function renderMyReturnsPage() {
             </div>
         `;
     } else {
-        
         contentHtml += `
             <p class="returns-info-message">If you decide you no longer want to return an item, simply keep it. No action is required from you, and your request will automatically expire.</p>
             <div class="returns-list">
             ${userReturns.map(ret => {
                 const itemsListHtml = ret.items.map(item => {
-                    const match = item.match(/"([^"]+)"/);
-                    const title = match ? match[1] : item.split(' (')[0];
-                    const product = allProducts.find(p => p.title === title);
+                    const product = allProducts.find(p => p.id === item.productId);
                     const imageUrl = product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A';
+                    const displayText = `${item.title} (x${item.quantity})`;
 
                     return `
                     <li class="returned-item">
-                        <img src="${imageUrl}" alt="${item}" class="returned-item-image">
-                        <span>${item}</span>
+                        <img src="${imageUrl}" alt="${item.title}" class="returned-item-image">
+                        <span>${displayText}</span>
                     </li>`;
                 }).join('');
+
+                const cancelButtonHtml = ret.status === 'Pending'
+                    ? `<button class="btn btn-danger btn-sm cancel-return-btn" data-return-id="${ret.id}">Cancel Request</button>`
+                    : '';
 
                 return `
                 <div class="data-card return-card">
@@ -2933,7 +3215,7 @@ function renderMyReturnsPage() {
                     <div class="data-card-body">
                         <div class="return-details-group">
                             <p class="return-detail-label">Request Date:</p>
-                            <p class="return-detail-value">${new Date(ret.requestDate).toLocaleDateString()}</p>
+                            <p class="return-detail-value">${new Date(ret.requestDate.seconds * 1000).toLocaleDateString()}</p>
                         </div>
                         <div class="return-details-group">
                             <p class="return-detail-label">Reason:</p>
@@ -2943,6 +3225,9 @@ function renderMyReturnsPage() {
                             <p class="return-detail-label">Items Returned:</p>
                             <ul class="returned-items-list">${itemsListHtml}</ul>
                         </div>
+                    </div>
+                    <div class="data-card-actions">
+                        ${cancelButtonHtml}
                     </div>
                 </div>`;
             }).join('')}
@@ -3020,6 +3305,7 @@ function receiveReturnItem(returnId) {
 
 // REPLACE this entire function in your public/app.js file
 
+// In app.js
 function renderOrderDetailPage(orderId) {
     const order = userOrders.find(o => o.id === orderId);
     if (!order) {
@@ -3030,42 +3316,35 @@ function renderOrderDetailPage(orderId) {
     const trackingLinkHtml = order.trackingNumber && order.courierUrl
         ? `<p><strong>Tracking:</strong> <a href="${order.courierUrl}${order.trackingNumber}" target="_blank">${order.trackingNumber}</a></p>`
         : '';
-
-    // --- Start building the main HTML content ---
+        
     let contentHtml = `
         <div class="page-header"><h2>Order Details</h2><button class="btn btn-secondary" id="back-to-orders">Back to My Orders</button></div>
         <div class="detail-card">
             <div class="order-detail-summary">
                 <p><strong>Order ID:</strong> #${order.id}</p>
-                <p><strong>Order Date:</strong> ${new Date(order.orderDate).toLocaleString()}</p>
+                <p><strong>Order Date:</strong> ${new Date(order.orderDate.seconds ? order.orderDate.seconds * 1000 : order.orderDate).toLocaleString()}</p>
                 <p><strong>Status:</strong> <span class="order-status ${order.status.toLowerCase()}">${order.status}</span></p>
                 ${trackingLinkHtml}
             </div>
         </div>
         <div class="detail-card" id="order-items-container"><h3>Items in this Order</h3><div class="order-detail-items">
-            // THIS IS THE NEW, CORRECTED CODE
-${order.items.map(item => {
-    const product = allProducts.find(p => p.id === item.productId);
-    const imageUrl = item.isCustom ? 'assets/images/custom_hamper_placeholder.jpg' : (product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A');
-
-    // Check if the item is a custom hamper and has contents to display.
-    const componentsHtml = (item.isCustom && item.contents)
-        ? `<ul class="order-detail-components">
-            ${item.contents.map(c => `<li>- ${c.name} (x${c.quantity})</li>`).join('')}
-           </ul>`
-        : '';
-
-    return `
-        <div class="order-summary-item">
-            <img src="${imageUrl}" alt="${item.title}" class="cart-item-image">
-            <div class="cart-item-info">
-                <p class="cart-item-title">${item.title}</p>
-                <p>Qty: ${item.quantity}</p>
-                ${componentsHtml}
-            </div>
-            <span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span>
-        </div>`;
-}).join('')}
+            ${order.items.map(item => {
+                const product = allProducts.find(p => p.id === item.productId);
+                const imageUrl = item.isCustom ? 'assets/images/custom_hamper_placeholder.jpg' : (product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A');
+                const componentsHtml = (item.isCustom && item.contents)
+                    ? `<ul class="order-detail-components">${item.contents.map(c => `<li>- ${c.name} (x${c.quantity})</li>`).join('')}</ul>`
+                    : '';
+                return `
+                    <div class="order-summary-item">
+                        <img src="${imageUrl}" alt="${item.title}" class="cart-item-image">
+                        <div class="cart-item-info">
+                            <p class="cart-item-title">${item.title}</p>
+                            <p>Qty: ${item.quantity}</p>
+                            ${componentsHtml}
+                        </div>
+                        <span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span>
+                    </div>`;
+            }).join('')}
         </div></div>
         <div class="order-summary detail-card">
             <div class="order-summary-item"><span>Items Subtotal</span><span>£${order.itemsSubtotal.toFixed(2)}</span></div>
@@ -3074,36 +3353,46 @@ ${order.items.map(item => {
         </div>
     `;
     
-    // --- THIS IS THE UPDATED LOGIC ---
     const returnWindow = appConfig?.returns?.returnWindowInDays ?? 28;
-    const daysSinceOrder = (new Date() - new Date(order.orderDate)) / (1000 * 3600 * 24);
 
-    if (daysSinceOrder <= returnWindow) {
-        // If eligible, add the new, simpler link to the bottom of the HTML
+    // --- THIS IS THE FIX ---
+    // We now correctly convert the Firestore Timestamp to a JavaScript Date.
+    const orderDate = order.orderDate.seconds ? new Date(order.orderDate.seconds * 1000) : new Date(order.orderDate);
+    const daysSinceOrder = (new Date() - orderDate) / (1000 * 3600 * 24);
+
+    const hasReturnableItems = order.items.some(orderItem => {
+        const returnedQty = userReturns
+            .filter(r => r.orderId === order.id)
+            .flatMap(r => r.items)
+            .filter(item => item.productId === orderItem.productId)
+            .reduce((sum, item) => sum + item.quantity, 0);
+        return returnedQty < orderItem.quantity;
+    });
+
+    if (daysSinceOrder <= returnWindow && hasReturnableItems) {
         contentHtml += `
-            <div class="return-trigger-note">
-                <a href="#" id="show-return-form-btn" class="btn-link">Need to return an item?</a>
+            <div id="return-trigger-container" class="detail-card" style="padding: 1rem 1.5rem;">
+                <div style="text-align: right;">
+                    <a href="#" id="show-return-form-btn" class="btn-link">Need to return an item?</a>
+                </div>
             </div>`;
-    } else {
-        // Otherwise, add the "window closed" message
+    } else if (daysSinceOrder > returnWindow) {
         contentHtml += `
             <div class="return-ineligible-note detail-card">
                 <h4>Return Window Closed</h4>
                 <p>This order was placed more than ${returnWindow} days ago and is no longer eligible for return.</p>
             </div>`;
     }
-    
-    // Render the complete HTML to the page
+
     pageOrderDetail.innerHTML = contentHtml;
     showPage('order-detail');
-    
-    // Add the click listener for the link we may have just created
+
     const showReturnBtn = document.getElementById('show-return-form-btn');
     if (showReturnBtn) {
-        // Use { once: true } so the link can only be clicked once
         showReturnBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            renderAndAttachReturnForm(order);
+            e.stopPropagation();
+            showReturnRequestPage(order);
         }, { once: true });
     }
 }
@@ -3150,7 +3439,10 @@ function renderAddressForm(addressToEdit) {
                 <div class="form-group"><label for="postcode">Postcode</label><input type="text" id="postcode" value="${isEditing ? addressToEdit.postcode : ''}" required></div>
                 <div class="form-group"><label for="country">Country</label><input type="text" id="country" value="${isEditing ? addressToEdit.country : 'UK'}" required></div>
                 <div class="form-group form-group-checkbox"><input type="checkbox" id="isDefault" ${isEditing && addressToEdit.isDefault ? 'checked' : ''}><label for="isDefault">Set as default</label></div>
-                <button type="submit" class="btn btn-primary btn-full-width">Save Address</button>
+                <button type="submit" id="save-address-btn" class="btn btn-primary btn-full-width">
+    <span class="btn-text">Save Address</span>
+    <div class="spinner" style="display: none;"></div>
+</button>
             </form>
         </div>`;
     showPage('address-form');
@@ -3159,6 +3451,17 @@ function renderAddressForm(addressToEdit) {
 
 async function handleSaveAddress(e) {
     e.preventDefault();
+
+    // --- THIS IS THE FIX ---
+    const saveBtn = document.getElementById('save-address-btn');
+    const btnText = saveBtn.querySelector('.btn-text');
+    const spinner = saveBtn.querySelector('.spinner');
+
+    saveBtn.disabled = true;
+    btnText.style.display = 'none';
+    spinner.style.display = 'block';
+    // --- END OF FIX ---
+
     const addressId = document.getElementById('addressId').value;
     const isEditing = !!addressId;
 
@@ -3174,39 +3477,38 @@ async function handleSaveAddress(e) {
 
     try {
         if (isEditing) {
-            // This is an UPDATE (PUT) request
             await fetchWithAuth('/api/addresses', {
                 method: 'PUT',
                 body: JSON.stringify({ addressId, ...newAddressData })
             });
         } else {
-            // This is a CREATE (POST) request
             await fetchWithAuth('/api/addresses', {
                 method: 'POST',
                 body: JSON.stringify(newAddressData)
             });
         }
         
-        // --- THIS IS THE KEY ---
-        // After saving, we re-fetch all addresses to get the latest, most accurate list.
         userAddresses = await fetchWithAuth('/api/addresses');
         
-        // Now we can decide where to navigate.
         if (addressFormReturnPath === 'checkout') {
-            // Find the newly created/edited address to auto-select it.
-            // This is a simple way; a more robust way might be to get the ID back from the API.
             const savedAddress = userAddresses.find(addr => addr.fullName === newAddressData.fullName && addr.addressLine1 === newAddressData.addressLine1);
             if (savedAddress) selectedCheckoutAddressId = savedAddress.id;
-            
             displayCheckoutPage();
         } else {
             renderMyAddressesPage();
         }
-        addressFormReturnPath = null; // Reset for next time
+        addressFormReturnPath = null;
 
     } catch (error) {
         console.error("Failed to save address:", error);
         showConfirmationModal(`Error saving address: ${error.message}`);
+        
+        // --- ADD THIS on error ---
+        // Re-enable the button so the user can try again
+        saveBtn.disabled = false;
+        btnText.style.display = 'inline';
+        spinner.style.display = 'none';
+        // --- END ADDED BLOCK ---
     }
 }
 
@@ -3528,3 +3830,26 @@ function showConfirmationRibbon(message, showViewBasketBtn = false) {
         ribbon.classList.remove('active');
     }, 3000);
 }
+//Brevo backend
+// Add this new function to app.js
+function initializePushNotifications() {
+    (function(d, s, id) {
+        var js, fjs = d.getElementsByTagName(s)[0];
+        if (d.getElementById(id)) return;
+        js = d.createElement(s); js.id = id;
+        js.src = "https://sdk.brevo.com/sdk.js";
+        fjs.parentNode.insertBefore(js, fjs);
+    }(document, "script", "brevo-sdk"));
+
+    window.brevo_q = window.brevo_q || [];
+    window.brevo_q.push(["init", {
+        publicKey: "YOUR_PUBLIC_VAPID_KEY_HERE", // <-- IMPORTANT: PASTE YOUR KEY HERE
+        serviceWorkerUrl: "/brevo-service-worker.js",
+    }]);
+    
+    window.brevo_q.push(["subscribe"]);
+    
+    console.log("Brevo Push Notifications initialized.");
+}
+
+

@@ -1,5 +1,8 @@
-// FILE: api/create-order.js (With Custom Order ID Generation)
+// FILE: api/create-order.js (Final, Robust Version)
 import admin from 'firebase-admin';
+// --- 1. IMPORT THE HELPER ---
+// NOTE: Adjust this path if your 'helpers' folder is located elsewhere.
+import { sendOrderConfirmation } from '../../helpers/brevo-helper';
 
 if (!admin.apps.length) {
   try {
@@ -15,12 +18,9 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const auth = admin.auth();
 
-// --- NEW HELPER FUNCTION TO GENERATE A READABLE ORDER ID ---
 function generateOrderId() {
     const now = new Date();
-    // Format: YYMMDD (e.g., 250906 for September 6, 2025)
     const datePart = now.toISOString().slice(2, 10).replace(/-/g, ""); 
-    // Format: 5 random alphanumeric characters (e.g., A3K9B)
     const randomPart = Math.random().toString(36).substring(2, 7).toUpperCase();
     return `ORD-${datePart}-${randomPart}`;
 }
@@ -50,28 +50,23 @@ export default async function handler(req, res) {
         if (!uid) return res.status(401).json({ error: 'Unauthorized' });
 
         const { orderPayload } = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-        if (!orderPayload || !orderPayload.items || orderPayload.items.length === 0) {
+        if (!orderPayload || !orderPayload.items || !orderPayload.items.length === 0) {
             return res.status(400).json({ error: 'Invalid order data.' });
         }
 
         const productRefs = orderPayload.items
             .filter(item => !item.isCustom)
             .map(item => db.collection('products').doc(item.productId));
+        
+        let finalOrderObjectForEmail; 
 
         const newOrderRef = await db.runTransaction(async (transaction) => {
-            
-            // --- THIS IS THE FIX ---
-            // Only perform stock checks if there are standard (non-custom) products in the cart.
-            // This prevents the .getAll() error when the cart contains only a custom hamper.
             if (productRefs.length > 0) {
                 const stockIssues = [];
                 const productDocs = await transaction.getAll(...productRefs);
 
                 for (const doc of productDocs) {
-                    if (!doc.exists) {
-                        const missingItem = orderPayload.items.find(item => item.productId === doc.id);
-                        throw new Error(`Product "${missingItem?.title || doc.id}" is no longer available.`);
-                    }
+                    if (!doc.exists) throw new Error(`Product is no longer available.`);
                     const productData = doc.data();
                     const cartItem = orderPayload.items.find(item => item.productId === doc.id);
                     if (productData.stock < cartItem.quantity) {
@@ -87,28 +82,38 @@ export default async function handler(req, res) {
                     transaction.update(doc.ref, { stock: newStock });
                 }
             }
-            // --- END FIX ---
             
-            // This part of the logic runs for ALL orders (custom-only or mixed).
             const newOrderId = generateOrderId();
             const newDocRef = db.collection('orders').doc(newOrderId);
             
-            const newOrder = {
-                id: newOrderId, // Also save the ID inside the document
+            finalOrderObjectForEmail = {
+                id: newOrderId,
                 ...orderPayload,
                 userId: uid,
-                orderDate: admin.firestore.FieldValue.serverTimestamp(),
+                orderDate: new Date(), // Use a standard Date object for the email
                 status: 'Pending'
             };
             
-            transaction.set(newDocRef, newOrder);
+            const firestoreOrder = { ...finalOrderObjectForEmail, orderDate: admin.firestore.FieldValue.serverTimestamp() };
+            
+            transaction.set(newDocRef, firestoreOrder);
             return newDocRef;
         });
 
+        // --- 2. RESPOND TO THE USER IMMEDIATELY ---
+        // The most important step is to confirm the order was created.
         res.status(201).json({ success: true, orderId: newOrderRef.id });
 
+        // --- 3. SEND EMAIL IN THE BACKGROUND ---
+        // This code runs after the response has been sent. It will not affect the user.
+        if (finalOrderObjectForEmail) {
+            console.log(`Order ${finalOrderObjectForEmail.id} confirmed. Attempting to send email in background...`);
+            // We don't use 'await' here, as we don't need to wait for it.
+            sendOrderConfirmation(finalOrderObjectForEmail);
+        }
+
     } catch (error) {
-        console.error("Error creating order:", error);
+        console.error("CRITICAL ERROR during order creation transaction:", error);
         res.status(500).json({ error: `An unexpected server error occurred: ${error.message}` });
     }
 }

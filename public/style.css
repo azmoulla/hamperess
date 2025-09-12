@@ -3133,3 +3133,13 @@ body.product-list-active .search-container {
     padding: 1.5rem 0 0.5rem 0;
     font-size: 0.9rem;
 }
+/* Add this with your other .return-status rules in style.css */
+
+.return-status.rejected { background: var(--error-color); }
+.return-status.expired { background: #7f8c8d; }
+
+/* --- ADD THIS NEW RULE --- */
+.return-status.cancelled { 
+    background-color: #7f8c8d; /* A neutral gray color */
+}
+/* --- END OF NEW RULE --- */
