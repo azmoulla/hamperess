@@ -1,7 +1,7 @@
 // FILE: api/_lib/brevo-helper.js (Corrected for Brevo SDK v3)
 const Brevo = require('@getbrevo/brevo');
 
-const SENDER_EMAIL = 'Az.moulla@gmail.com';
+const SENDER_EMAIL = 'a.moulla@btinternet.com';
 const SENDER_NAME = 'Luxury Hampers';
 
 async function sendOrderConfirmation(order) {
@@ -52,5 +52,6 @@ async function sendOrderConfirmation(order) {
         console.error('[brevo-helper] FATAL: Failed to send email via Brevo. Full error:', error);
     }
 }
+
 
 module.exports = { sendOrderConfirmation };
