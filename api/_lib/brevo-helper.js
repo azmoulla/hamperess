@@ -10,7 +10,6 @@ async function sendOrderConfirmation(order) {
 
     if (!brevoApiKey) {
         console.error('[brevo-helper] CRITICAL: BREVO_API_KEY is missing from environment. Email cannot be sent.');
-        // Return without throwing an error, but the order function will still succeed.
         return;
     }
 
@@ -46,7 +45,6 @@ async function sendOrderConfirmation(order) {
 
     } catch (error) {
         console.error('[brevo-helper] FATAL: Failed to send email via Brevo. Full error:', JSON.stringify(error, null, 2));
-        // Throw the error so the calling function's catch block is triggered.
         throw new Error('Failed to send transactional email via Brevo.');
     }
 }

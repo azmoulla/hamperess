@@ -1,6 +1,5 @@
 // FILE: api/create-order.js (Final Production Version)
 const admin = require('firebase-admin');
-// --- THIS IS THE CORRECTED PATH ---
 const { sendOrderConfirmation } = require('./_lib/brevo-helper.js');
 
 if (!admin.apps.length) {
@@ -90,20 +89,16 @@ module.exports = async function handler(req, res) {
 
         newOrderRefId = newOrderRef.id;
 
-        // --- THE FIX: AWAIT THE EMAIL SEND PROCESS ---
-        // We will now wait for the email to be sent before responding to the user.
         if (finalOrderObjectForEmail) {
             console.log(`Order ${newOrderRefId} saved. Attempting to send email...`);
             await sendOrderConfirmation(finalOrderObjectForEmail);
         }
 
-        // --- RESPOND AFTER ALL TASKS ARE COMPLETE ---
         console.log(`Order ${newOrderRefId} processed successfully. Sending 201 response.`);
         res.status(201).json({ success: true, orderId: newOrderRefId });
 
     } catch (error) {
         console.error(`[FATAL] Error processing order ${newOrderRefId || ''}:`, error.message);
-        // If there's an error (e.g., from the email function), we now send a generic server error
         res.status(500).json({ error: `An unexpected server error occurred. Please contact support.` });
     }
 }
