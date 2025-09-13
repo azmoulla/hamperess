@@ -1,25 +1,16 @@
-// FILE: helpers/brevo-helper.js (Final, Robust Version)
-import SibApiV3Sdk from '@sendinblue/client';
+// FILE: api/_lib/brevo-helper.js (Final Production Version)
+const SibApiV3Sdk = require('@sendinblue/client');
 
-console.log('[API DIAGNOSTIC] brevo-helper.js module has been loaded.');
-
-// This is the verified sender email you configured in Brevo
-const SENDER_EMAIL = 'Az.moulla@gmail.com'; 
+const SENDER_EMAIL = 'Az.moulla@gmail.com';
 const SENDER_NAME = 'Luxury Hampers';
 
-/**
- * Sends an order confirmation email using Brevo. This function is now self-contained
- * and will only fail when called, not when the module is loaded.
- * @param {object} order - The complete order object.
- */
-export async function sendOrderConfirmation(order) {
-    // Check for the API key at the moment the function is called.
+async function sendOrderConfirmation(order) {
+    console.log(`[brevo-helper] Preparing to send email for order ${order.id}...`);
     const brevoApiKey = process.env.BREVO_API_KEY;
 
     if (!brevoApiKey) {
-        // Log a critical error to the server logs, but DO NOT crash the server.
-        console.error('[API ERROR] CRITICAL: The BREVO_API_KEY environment variable is missing. Email cannot be sent.');
-        // Return early to prevent a crash from the API client.
+        console.error('[brevo-helper] CRITICAL: BREVO_API_KEY is missing from environment. Email cannot be sent.');
+        // Return without throwing an error, but the order function will still succeed.
         return;
     }
 
@@ -49,10 +40,15 @@ export async function sendOrderConfirmation(order) {
                 <h3 style="margin-top: 20px; text-align: right;">Total: £${order.totalAmount.toFixed(2)}</h3>
             </div>`;
 
-        await apiInstance.sendTransacEmail(sendSmtpEmail);
-        console.log(`Order confirmation email sent successfully to ${order.customerEmail} via Brevo.`);
+        console.log(`[brevo-helper] Sending API request to Brevo for ${order.customerEmail}...`);
+        const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
+        console.log(`[brevo-helper] SUCCESS: Brevo API responded with Message ID: ${data.body.messageId}`);
+
     } catch (error) {
-        // Log the detailed error from Brevo for better debugging but do not re-throw.
-        console.error('CRITICAL: Error sending Brevo email:', JSON.stringify(error, null, 2));
+        console.error('[brevo-helper] FATAL: Failed to send email via Brevo. Full error:', JSON.stringify(error, null, 2));
+        // Throw the error so the calling function's catch block is triggered.
+        throw new Error('Failed to send transactional email via Brevo.');
     }
 }
+
+module.exports = { sendOrderConfirmation };

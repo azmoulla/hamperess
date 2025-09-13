@@ -1,8 +1,7 @@
-// FILE: api/create-order.js (Final, Robust Version)
-import admin from 'firebase-admin';
-// --- 1. IMPORT THE HELPER ---
-// NOTE: Adjust this path if your 'helpers' folder is located elsewhere.
-import { sendOrderConfirmation } from '../../helpers/brevo-helper';
+// FILE: api/create-order.js (Final Production Version)
+const admin = require('firebase-admin');
+// --- THIS IS THE CORRECTED PATH ---
+const { sendOrderConfirmation } = require('./_lib/brevo-helper.js');
 
 if (!admin.apps.length) {
   try {
@@ -38,7 +37,8 @@ async function getVerifiedUid(req) {
     }
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
+    let newOrderRefId = null;
     try {
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -50,7 +50,7 @@ export default async function handler(req, res) {
         if (!uid) return res.status(401).json({ error: 'Unauthorized' });
 
         const { orderPayload } = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-        if (!orderPayload || !orderPayload.items || !orderPayload.items.length === 0) {
+        if (!orderPayload || !orderPayload.items || orderPayload.items.length === 0) {
             return res.status(400).json({ error: 'Invalid order data.' });
         }
 
@@ -64,7 +64,6 @@ export default async function handler(req, res) {
             if (productRefs.length > 0) {
                 const stockIssues = [];
                 const productDocs = await transaction.getAll(...productRefs);
-
                 for (const doc of productDocs) {
                     if (!doc.exists) throw new Error(`Product is no longer available.`);
                     const productData = doc.data();
@@ -73,9 +72,7 @@ export default async function handler(req, res) {
                         stockIssues.push(`${cartItem.title} (Available: ${productData.stock || 0})`);
                     }
                 }
-
                 if (stockIssues.length > 0) throw new Error(`Out of stock: ${stockIssues.join(', ')}`);
-
                 for (const doc of productDocs) {
                     const cartItem = orderPayload.items.find(item => item.productId === doc.id);
                     const newStock = admin.firestore.FieldValue.increment(-cartItem.quantity);
@@ -85,35 +82,28 @@ export default async function handler(req, res) {
             
             const newOrderId = generateOrderId();
             const newDocRef = db.collection('orders').doc(newOrderId);
-            
-            finalOrderObjectForEmail = {
-                id: newOrderId,
-                ...orderPayload,
-                userId: uid,
-                orderDate: new Date(), // Use a standard Date object for the email
-                status: 'Pending'
-            };
-            
+            finalOrderObjectForEmail = { id: newOrderId, ...orderPayload, userId: uid, orderDate: new Date(), status: 'Pending' };
             const firestoreOrder = { ...finalOrderObjectForEmail, orderDate: admin.firestore.FieldValue.serverTimestamp() };
-            
             transaction.set(newDocRef, firestoreOrder);
             return newDocRef;
         });
 
-        // --- 2. RESPOND TO THE USER IMMEDIATELY ---
-        // The most important step is to confirm the order was created.
-        res.status(201).json({ success: true, orderId: newOrderRef.id });
+        newOrderRefId = newOrderRef.id;
 
-        // --- 3. SEND EMAIL IN THE BACKGROUND ---
-        // This code runs after the response has been sent. It will not affect the user.
+        // --- THE FIX: AWAIT THE EMAIL SEND PROCESS ---
+        // We will now wait for the email to be sent before responding to the user.
         if (finalOrderObjectForEmail) {
-            console.log(`Order ${finalOrderObjectForEmail.id} confirmed. Attempting to send email in background...`);
-            // We don't use 'await' here, as we don't need to wait for it.
-            sendOrderConfirmation(finalOrderObjectForEmail);
+            console.log(`Order ${newOrderRefId} saved. Attempting to send email...`);
+            await sendOrderConfirmation(finalOrderObjectForEmail);
         }
 
+        // --- RESPOND AFTER ALL TASKS ARE COMPLETE ---
+        console.log(`Order ${newOrderRefId} processed successfully. Sending 201 response.`);
+        res.status(201).json({ success: true, orderId: newOrderRefId });
+
     } catch (error) {
-        console.error("CRITICAL ERROR during order creation transaction:", error);
-        res.status(500).json({ error: `An unexpected server error occurred: ${error.message}` });
+        console.error(`[FATAL] Error processing order ${newOrderRefId || ''}:`, error.message);
+        // If there's an error (e.g., from the email function), we now send a generic server error
+        res.status(500).json({ error: `An unexpected server error occurred. Please contact support.` });
     }
 }
