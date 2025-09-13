@@ -1,0 +1,8 @@
+{
+  "deliveryThreshold": 50.00,
+  "standardDeliveryCharge": 4.95,
+  "additionalHamperCharge": 1.99,
+  "maxUnderThresholdDeliveryCharge": 20.00,
+  "lowStockThreshold": 10,
+  "showLowStockIndicator": true
+}

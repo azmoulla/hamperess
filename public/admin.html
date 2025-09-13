@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luxury Hampers - Admin Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .status-badge { padding: 4px 10px; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; }
+        .status-pending { background-color: #fef9c3; color: #854d0e; }
+        .status-approved { background-color: #dcfce7; color: #166534; }
+        .status-rejected { background-color: #fee2e2; color: #991b1b; }
+        .status-cancelled { background-color: #e5e7eb; color: #4b5563; }
+        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #1d4ed8; animation: spin 1s ease infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="text-gray-800">
+
+    <div id="app-container" class="min-h-screen flex items-center justify-center p-4">
+
+        <div id="login-section" class="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
+            <h1 class="text-2xl font-bold text-center text-gray-800 mb-2">Admin Panel Login</h1>
+            <p class="text-center text-gray-500 mb-6">Access for authorized personnel only.</p>
+            <form id="login-form">
+                <div class="mb-4">
+                    <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                    <input type="email" id="email" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-6">
+                    <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" id="password" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition duration-300">Login</button>
+            </form>
+            <div id="login-error" class="mt-4 text-center text-red-600"></div>
+        </div>
+
+        <div id="dashboard-section" class="hidden w-full max-w-6xl bg-white p-8 rounded-lg shadow-md">
+            <div class="flex justify-between items-center mb-6 border-b pb-4">
+                <h1 class="text-2xl font-bold text-gray-800">Admin Dashboard</h1>
+                <button id="logout-btn" class="text-sm text-blue-600 hover:underline">Logout</button>
+            </div>
+
+            <div class="mb-10">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Order Lookup</h2>
+                <form id="search-form" class="mb-6">
+                    <label for="search-input" class="block text-sm font-medium text-gray-700 mb-1">Search by Order ID or Customer Email</label>
+                    <div class="flex">
+                        <input type="search" id="search-input" placeholder="e.g., ORD-..." class="flex-grow px-3 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-r-md hover:bg-blue-700">Search</button>
+                    </div>
+                </form>
+                <div id="results-section">
+                    <div id="loader" class="hidden justify-center items-center py-8"><div class="spinner"></div></div>
+                    <div id="results-message" class="text-center text-gray-500 py-8">Enter an Order ID or email to begin.</div>
+                    <div id="results-table" class="hidden"></div>
+                </div>
+            </div>
+
+            <div class="mt-10">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Pending Return Requests</h2>
+                <div id="returns-section">
+                    <div id="returns-loader" class="hidden justify-center items-center py-8"><div class="spinner"></div></div>
+                    <div id="returns-message" class="text-center text-gray-500 py-8">Loading returns...</div>
+                    <div id="returns-table-container" class="hidden"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBzU9YCpen0fJ12eGSnLeQGXsavSa9kX3w",
+            authDomain: "luxury-hampers-app.firebaseapp.com",
+            projectId: "luxury-hampers-app",
+            storageBucket: "luxury-hampers-app.firebasestorage.app",
+            messagingSenderId: "314612428903",
+            appId: "1:314612428903:web:39c34c1d63e0aa818124c2"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const fbAuth = firebase.auth();
+        const db = firebase.firestore();
+
+        const loginSection = document.getElementById('login-section');
+        const dashboardSection = document.getElementById('dashboard-section');
+        const loginForm = document.getElementById('login-form');
+        const loginError = document.getElementById('login-error');
+        const logoutBtn = document.getElementById('logout-btn');
+        const searchForm = document.getElementById('search-form');
+        const searchInput = document.getElementById('search-input');
+        const loader = document.getElementById('loader');
+        const resultsMessage = document.getElementById('results-message');
+        const resultsTableContainer = document.getElementById('results-table');
+        const returnsLoader = document.getElementById('returns-loader');
+        const returnsMessage = document.getElementById('returns-message');
+        const returnsTableContainer = document.getElementById('returns-table-container');
+
+        fbAuth.onAuthStateChanged(async (user) => {
+            if (user) {
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                if (userDoc.exists && userDoc.data().isAdmin === true) {
+                    loginSection.classList.add('hidden');
+                    dashboardSection.classList.remove('hidden');
+                    fetchAndDisplayReturns();
+                } else {
+                    await fbAuth.signOut();
+                    loginError.textContent = 'Access Denied. You do not have admin privileges.';
+                }
+            } else {
+                loginSection.classList.remove('hidden');
+                dashboardSection.classList.add('hidden');
+            }
+        });
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            try {
+                await fbAuth.signInWithEmailAndPassword(email, password);
+            } catch (error) {
+                loginError.textContent = 'Login failed. Please check your credentials.';
+            }
+        });
+
+        logoutBtn.addEventListener('click', () => fbAuth.signOut());
+
+        searchForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const query = searchInput.value.trim();
+            if (!query) return;
+            loader.classList.remove('hidden');
+            resultsMessage.classList.add('hidden');
+            resultsTableContainer.classList.add('hidden');
+            try {
+                const token = await fbAuth.currentUser.getIdToken();
+                const isEmail = query.includes('@');
+                const searchParam = isEmail ? `email=${encodeURIComponent(query)}` : `orderId=${encodeURIComponent(query)}`;
+                const response = await fetch(`/api/find-order?${searchParam}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!response.ok) throw new Error(response.status === 404 ? 'No orders found.' : 'API request failed.');
+                const orders = await response.json();
+                renderResults(orders);
+            } catch (error) {
+                resultsMessage.textContent = `Error: ${error.message}`;
+                resultsMessage.classList.remove('hidden');
+            } finally {
+                loader.classList.add('hidden');
+            }
+        });
+
+       // REPLACE the existing renderResults function in your <script> tag with this one.
+
+/**
+ * Renders the fetched order data into a clean HTML table.
+ * @param {Array<Object>} orders - An array of order objects.
+ */
+function renderResults(orders) {
+    if (!orders || orders.length === 0) {
+        resultsMessage.textContent = 'No orders found matching your search.';
+        resultsMessage.classList.remove('hidden');
+        resultsTableContainer.classList.add('hidden');
+        return;
+    }
+
+    let tableHtml = `
+        <div class="overflow-x-auto">
+            <table class="min-w-full bg-white border border-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+    `;
+
+    orders.forEach(order => {
+        // --- THIS IS THE FIX ---
+        // The API sends a simple date string, so we parse it directly.
+        const orderDate = new Date(order.orderDate).toLocaleDateString();
+
+        // This logic correctly handles both guest and registered user data.
+        const customerName = order.deliveryAddress?.fullName || order.customerName || 'N/A';
+        const customerEmail = order.deliveryAddress?.email || order.customerEmail || 'N/A';
+        
+        const statusClass = `status-${(order.status || 'pending').toLowerCase()}`;
+        
+        tableHtml += `
+            <tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${order.id}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                    <div>${customerName}</div>
+                    <div class="text-xs text-gray-500">${customerEmail}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${orderDate}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">£${order.totalAmount.toFixed(2)}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                    <span class="status-badge ${statusClass}">${order.status || 'Pending'}</span>
+                </td>
+            </tr>
+        `;
+    });
+
+    tableHtml += `</tbody></table></div>`;
+    
+    resultsTableContainer.innerHTML = tableHtml;
+    resultsTableContainer.classList.remove('hidden');
+}
+
+        async function fetchAndDisplayReturns() {
+            returnsLoader.classList.remove('hidden');
+            returnsMessage.classList.add('hidden');
+            returnsTableContainer.classList.add('hidden');
+            try {
+                const token = await fbAuth.currentUser.getIdToken();
+                const response = await fetch('/api/get-all-returns', { headers: { 'Authorization': `Bearer ${token}` } });
+                if (!response.ok) throw new Error('Failed to fetch returns.');
+                const returns = await response.json();
+                renderReturnsTable(returns);
+            } catch (error) {
+                returnsMessage.textContent = `Error: ${error.message}`;
+                returnsMessage.classList.remove('hidden');
+            } finally {
+                returnsLoader.classList.add('hidden');
+            }
+        }
+
+        function renderReturnsTable(returns) {
+    if (!returns || returns.length === 0) {
+        returnsMessage.textContent = 'No return requests found.';
+        returnsMessage.classList.remove('hidden');
+        returnsTableContainer.classList.add('hidden');
+        return;
+    }
+
+    let tableHtml = `<div class="overflow-x-auto"><table class="min-w-full bg-white border">
+        <thead class="bg-gray-50"><tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order ID</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+        </tr></thead><tbody class="divide-y divide-gray-200">`;
+
+    returns.forEach(ret => {
+        const requestDate = ret.requestDate?.seconds ? new Date(ret.requestDate.seconds * 1000).toLocaleDateString() : 'N/A';
+        const statusClass = `status-${(ret.status || 'pending').toLowerCase()}`;
+        // Only show buttons if the status is 'Pending'
+        const actionButtons = ret.status === 'Pending' ? `
+            <button class="return-action-btn bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1 rounded-full text-xs" data-user-id="${ret.userId}" data-return-id="${ret.returnId}" data-action="Rejected">Reject</button>
+            <button class="return-action-btn bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1 rounded-full text-xs" data-user-id="${ret.userId}" data-return-id="${ret.returnId}" data-action="Approved">Approve</button>
+            ` : '<span>-</span>';
+
+        tableHtml += `
+            <tr id="return-row-${ret.returnId}">
+                <td class="px-6 py-4 text-sm">${ret.customerName}</td>
+                <td class="px-6 py-4 text-sm">${ret.orderId}</td>
+                <td class="px-6 py-4 text-sm">${requestDate}</td>
+                <td class="px-6 py-4 text-sm">
+                    <span class="status-badge ${statusClass}">${ret.status || 'Pending'}</span>
+                </td>
+                <td class="px-6 py-4 text-center text-sm space-x-2">${actionButtons}</td>
+            </tr>`;
+    });
+
+    tableHtml += `</tbody></table></div>`;
+    returnsTableContainer.innerHTML = tableHtml;
+    returnsTableContainer.classList.remove('hidden');
+}
+
+       dashboardSection.addEventListener('click', async (e) => {
+    const target = e.target.closest('.return-action-btn');
+    if (!target) return;
+
+    target.disabled = true;
+    target.parentElement.querySelectorAll('button').forEach(btn => btn.disabled = true);
+    target.textContent = 'Processing...';
+
+    const { userId, returnId, orderId, action } = target.dataset;
+    
+    try {
+        const token = await fbAuth.currentUser.getIdToken();
+        // First, update the return's status
+        await fetch('/api/update-return-status', {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, returnId, newStatus: action })
+        });
+
+        // --- THIS IS THE NEW LOGIC ---
+        // If the return was approved, also update the original order's status
+        if (action === 'Approved') {
+            await fetch('/api/update-order-status', {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderId: orderId, newStatus: 'Returned' })
+            });
+        }
+        // --- END OF NEW LOGIC ---
+
+        const row = document.getElementById(`return-row-${returnId}`);
+        if (row) {
+            const statusBadge = row.querySelector('.status-badge');
+            const actionCell = row.querySelector('td:last-child');
+            statusBadge.textContent = action;
+            statusBadge.className = `status-badge status-${action.toLowerCase()}`;
+            actionCell.innerHTML = `<span>${action}</span>`;
+        }
+    } catch (error) {
+        console.error('Failed to update status:', error);
+        alert(`Error: ${error.message}`);
+        target.disabled = false;
+        target.parentElement.querySelectorAll('button').forEach(btn => btn.disabled = false);
+        target.textContent = action;
+    }
+});
+    </script>
+</body>
+</html>

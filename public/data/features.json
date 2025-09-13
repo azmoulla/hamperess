@@ -1,0 +1,22 @@
+[
+  {
+    "icon": "fa-truck-fast",
+    "title": "Next-Day Delivery",
+    "subtitle": "Order before 2pm for delivery across the UK tomorrow."
+  },
+  {
+    "icon": "fa-star",
+    "title": "Award-Winning Quality",
+    "subtitle": "Curated with only the finest products from trusted artisans."
+  },
+  {
+    "icon": "fa-gifts",
+    "title": "Personalised Gifts",
+    "subtitle": "Add a personal touch with a custom message and gift wrap."
+  },
+  {
+    "icon": "fa-shield-halved",
+    "title": "Secure Checkout",
+    "subtitle": "Your payments are processed securely for peace of mind."
+  }
+]

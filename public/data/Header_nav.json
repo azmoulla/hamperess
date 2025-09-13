@@ -1,0 +1,72 @@
+[
+  {
+    "title": "Bestsellers",
+    "linkType": "scrollTo",
+    "target": "bestsellers",
+    "argument": "Bestsellers",
+    "isSale": false
+  },
+  {
+    "title": "All Hampers",
+    "linkType": "route",
+    "target": "/product-listing",
+    "argument": "__ALL_PRODUCTS_TRIGGER__",
+    "isSale": false
+  },
+  {
+    "title": "Occasions",
+    "linkType": "route",
+    "target": "/product-listing",
+    "argument": "Birthday Hampers",
+    "isSale": false
+  },
+  {
+    "title": "Recipient",
+    "linkType": "route",
+    "target": "/product-listing",
+    "argument": "Congratulations Hampers",
+    "isSale": false
+  },
+  {
+    "title": "Food Only",
+    "linkType": "route",
+    "target": "/product-listing",
+    "argument": "Food Only Selection",
+    "isSale": false
+  },
+  {
+    "title": "Wine & Spirits",
+    "linkType": "route",
+    "target": "/product-listing",
+    "argument": "Premium Wine & Spirits",
+    "isSale": false
+  },
+  {
+    "title": "SALE",
+    "linkType": "route",
+    "target": "/product-listing",
+    "argument": "Special Sale Items",
+    "isSale": true
+  },
+  {
+    "title": "Create Your Own",
+    "linkType": "route",
+    "target": "/create-your-own",
+    "argument": null,
+    "isSale": false
+  },
+  {
+    "title": "Corporate",
+    "linkType": "route",
+    "target": "/product-listing",
+    "argument": "Corporate Gifting Solutions",
+    "isSale": false
+  },
+   {
+    "title": "My day hamper",
+    "linkType": "route",
+    "target": "/product-listing",
+    "argument": "My Day Hampers",
+    "isSale": false
+  }
+]
