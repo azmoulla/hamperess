@@ -37,7 +37,7 @@ async function sendOrderConfirmation(order) {
                             ${item.title} (x${item.quantity}) - <strong>£${(item.price * item.quantity).toFixed(2)}</strong>
                         </li>`).join('')}
                 </ul>
-                <h3 style="margin-top: 20px; text-align: right;">Total: £${order.totalAmount.toFixed(2)}</h3>
+                <h3 style="margin-top: 20px; text-align: right;">Total: £${(order.totalAmount).toFixed(2)}</h3>
             </div>`;
 
         console.log(`[brevo-helper] Sending API request to Brevo for ${order.customerEmail}...`);
