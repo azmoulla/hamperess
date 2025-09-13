@@ -1,5 +1,5 @@
-// FILE: api/_lib/brevo-helper.js (Final Production Version)
-const SibApiV3Sdk = require('@sendinblue/client');
+// FILE: api/_lib/brevo-helper.js (Corrected for Brevo SDK v3)
+const Brevo = require('@getbrevo/brevo');
 
 const SENDER_EMAIL = 'Az.moulla@gmail.com';
 const SENDER_NAME = 'Luxury Hampers';
@@ -9,16 +9,19 @@ async function sendOrderConfirmation(order) {
     const brevoApiKey = process.env.BREVO_API_KEY;
 
     if (!brevoApiKey) {
-        console.error('[brevo-helper] CRITICAL: BREVO_API_KEY is missing from environment. Email cannot be sent.');
+        console.error('[brevo-helper] CRITICAL: BREVO_API_KEY is missing. Email cannot be sent.');
         return;
     }
 
     try {
-        const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-        const apiKeyAuth = apiInstance.authentications['apiKey'];
-        apiKeyAuth.apiKey = brevoApiKey;
+        // --- THIS IS THE UPDATED PART FOR V3 ---
+        // Initialize the API and set the authentication key directly on the instance.
+        const apiInstance = new Brevo.TransactionalEmailsApi();
+        apiInstance.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, brevoApiKey);
+        // --- END OF UPDATE ---
         
-        const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+        // Construct the email (this part remains the same)
+        const sendSmtpEmail = new Brevo.SendSmtpEmail();
 
         sendSmtpEmail.subject = `Your Luxury Hampers Order Confirmation #${order.id}`;
         sendSmtpEmail.sender = { name: SENDER_NAME, email: SENDER_EMAIL };
@@ -40,12 +43,13 @@ async function sendOrderConfirmation(order) {
             </div>`;
 
         console.log(`[brevo-helper] Sending API request to Brevo for ${order.customerEmail}...`);
+        
+        // Send the email
         const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
-        console.log(`[brevo-helper] SUCCESS: Brevo API responded with Message ID: ${data.body.messageId}`);
+        console.log(`[brevo-helper] SUCCESS: Brevo API responded with:`, data);
 
     } catch (error) {
-        console.error('[brevo-helper] FATAL: Failed to send email via Brevo. Full error:', JSON.stringify(error, null, 2));
-        throw new Error('Failed to send transactional email via Brevo.');
+        console.error('[brevo-helper] FATAL: Failed to send email via Brevo. Full error:', error);
     }
 }
 
