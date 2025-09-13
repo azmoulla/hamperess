@@ -10,7 +10,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@getbrevo/brevo": "^3.0.1",
-    "firebase-admin": "^13.5.0"
+    "@getbrevo/brevo": "^2.0.0-beta.4",
+    "firebase-admin": "^12.1.0"
   }
 }

@@ -1,4 +1,4 @@
-// FILE: api/_lib/brevo-helper.js (Corrected for Brevo SDK v3)
+// FILE: api/_lib/brevo-helper.js (Final Version with @getbrevo/brevo)
 const Brevo = require('@getbrevo/brevo');
 
 const SENDER_EMAIL = 'Az.moulla@gmail.com';
@@ -14,13 +14,11 @@ async function sendOrderConfirmation(order) {
     }
 
     try {
-        // --- THIS IS THE UPDATED PART FOR V3 ---
-        // Initialize the API and set the authentication key directly on the instance.
+        const defaultClient = Brevo.ApiClient.instance;
+        const apiKey = defaultClient.authentications['api-key'];
+        apiKey.apiKey = brevoApiKey;
+
         const apiInstance = new Brevo.TransactionalEmailsApi();
-        apiInstance.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, brevoApiKey);
-        // --- END OF UPDATE ---
-        
-        // Construct the email (this part remains the same)
         const sendSmtpEmail = new Brevo.SendSmtpEmail();
 
         sendSmtpEmail.subject = `Your Luxury Hampers Order Confirmation #${order.id}`;
@@ -43,13 +41,12 @@ async function sendOrderConfirmation(order) {
             </div>`;
 
         console.log(`[brevo-helper] Sending API request to Brevo for ${order.customerEmail}...`);
-        
-        // Send the email
         const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
         console.log(`[brevo-helper] SUCCESS: Brevo API responded with:`, data);
 
     } catch (error) {
-        console.error('[brevo-helper] FATAL: Failed to send email via Brevo. Full error:', error);
+        console.error('[brevo-helper] FATAL: Failed to send email via Brevo. Full error:', JSON.stringify(error, null, 2));
+        throw new Error('Failed to send transactional email via Brevo.');
     }
 }
 
