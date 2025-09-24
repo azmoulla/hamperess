@@ -5,68 +5,182 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Luxury Hampers - Admin Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
-        .status-badge { padding: 4px 10px; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; }
-        .status-pending { background-color: #fef9c3; color: #854d0e; }
-        .status-approved { background-color: #dcfce7; color: #166534; }
-        .status-rejected { background-color: #fee2e2; color: #991b1b; }
-        .status-cancelled { background-color: #e5e7eb; color: #4b5563; }
-        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #1d4ed8; animation: spin 1s ease infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    </style>
+    <link rel="stylesheet" href="admin.css?v=2">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
+<script src="https://cdn.tailwindcss.com"></script>
 <body class="text-gray-800">
 
-    <div id="app-container" class="min-h-screen flex items-center justify-center p-4">
-
-        <div id="login-section" class="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
-            <h1 class="text-2xl font-bold text-center text-gray-800 mb-2">Admin Panel Login</h1>
-            <p class="text-center text-gray-500 mb-6">Access for authorized personnel only.</p>
-            <form id="login-form">
-                <div class="mb-4">
-                    <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                    <input type="email" id="email" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <div id="app-container" class="min-h-screen">
+        <div id="admin-notification" class="p-4 rounded-md shadow-lg text-white text-sm font-semibold" style="z-index: 100;">
+            <span id="admin-notification-message"></span>
+        </div>
+        
+        <div id="admin-confirm-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 h-full w-full flex items-center justify-center" style="z-index: 110;">
+            <div class="relative mx-auto p-5 border w-full max-w-sm shadow-lg rounded-md bg-white">
+                <div class="mt-3 text-center">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900">Confirmation</h3>
+                    <div class="mt-2 px-7 py-3"><p id="admin-confirm-message" class="text-sm text-gray-500"></p></div>
+                    <div class="items-center px-4 py-3 space-x-2">
+                        <button id="admin-confirm-ok-btn" class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md w-auto hover:bg-blue-700">OK</button>
+                        <button id="admin-confirm-cancel-btn" class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto hover:bg-gray-300">Cancel</button>
+                    </div>
                 </div>
-                <div class="mb-6">
-                    <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                    <input type="password" id="password" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+        </div>
+        
+        <div id="cancel-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center">
+            <div class="relative mx-auto p-5 border w-full max-w-lg shadow-lg rounded-md bg-white">
+                <div class="mt-3 text-center">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900" id="cancel-modal-title">Cancel Order</h3>
+                    <div id="cancel-modal-body" class="mt-2 px-7 py-3 text-left"><p class="text-sm text-gray-500 mb-4">Select items to cancel...</p><form id="cancellation-form"></form></div>
+                    <div id="cancel-modal-spinner" class="hidden justify-center items-center py-4"><div class="spinner"></div></div>
+                    <div class="items-center px-4 py-3 space-x-2"><button id="cancel-selected-btn" class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md w-auto hover:bg-blue-700">Cancel Selected</button><button id="cancel-full-btn" class="px-4 py-2 bg-red-600 text-white text-base font-medium rounded-md w-auto hover:bg-red-700">Cancel Entire Order</button><button id="close-cancel-modal-btn" class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto hover:bg-gray-300">Close</button></div>
                 </div>
-                <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition duration-300">Login</button>
-            </form>
-            <div id="login-error" class="mt-4 text-center text-red-600"></div>
+            </div>
         </div>
 
-        <div id="dashboard-section" class="hidden w-full max-w-6xl bg-white p-8 rounded-lg shadow-md">
-            <div class="flex justify-between items-center mb-6 border-b pb-4">
-                <h1 class="text-2xl font-bold text-gray-800">Admin Dashboard</h1>
-                <button id="logout-btn" class="text-sm text-blue-600 hover:underline">Logout</button>
-            </div>
-
-            <div class="mb-10">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">Order Lookup</h2>
-                <form id="search-form" class="mb-6">
-                    <label for="search-input" class="block text-sm font-medium text-gray-700 mb-1">Search by Order ID or Customer Email</label>
-                    <div class="flex">
-                        <input type="search" id="search-input" placeholder="e.g., ORD-..." class="flex-grow px-3 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-r-md hover:bg-blue-700">Search</button>
+        <div id="issue-credit-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 h-full w-full flex items-center justify-center" style="z-index: 120;">
+            <div class="relative mx-auto p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
+                <div class="mt-3">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 text-center">Issue Store Credit</h3>
+                    <div class="mt-4 px-4 py-3">
+                        <p class="text-sm text-gray-600 mb-4">
+                            Generating a single-use voucher for return <strong id="modal-return-id"></strong> for customer <strong id="modal-customer-email"></strong>.
+                        </p>
+                        <form id="issue-credit-form">
+                            <label for="credit-value-input" class="block text-sm font-medium text-gray-700">Voucher Value (£)</label>
+                            <input type="number" id="credit-value-input" step="0.01" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                            <input type="hidden" id="modal-hidden-return-id">
+                            <input type="hidden" id="modal-hidden-return-path">
+                            <input type="hidden" id="modal-hidden-customer-email">
+                        </form>
                     </div>
-                </form>
-                <div id="results-section">
-                    <div id="loader" class="hidden justify-center items-center py-8"><div class="spinner"></div></div>
-                    <div id="results-message" class="text-center text-gray-500 py-8">Enter an Order ID or email to begin.</div>
-                    <div id="results-table" class="hidden"></div>
+                    <div id="credit-modal-spinner" class="hidden justify-center items-center py-4"><div class="spinner"></div></div>
+                    <div class="items-center px-4 py-3 space-x-2 text-right">
+                        <button id="modal-cancel-btn" class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto hover:bg-gray-300">Cancel</button>
+                        <button id="modal-generate-btn" class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md w-auto hover:bg-blue-700">Generate Voucher</button>
+                    </div>
                 </div>
             </div>
+        </div>
 
-            <div class="mt-10">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">Pending Return Requests</h2>
-                <div id="returns-section">
-                    <div id="returns-loader" class="hidden justify-center items-center py-8"><div class="spinner"></div></div>
-                    <div id="returns-message" class="text-center text-gray-500 py-8">Loading returns...</div>
-                    <div id="returns-table-container" class="hidden"></div>
-                </div>
+        <div id="login-section" class="flex items-center justify-center min-h-screen">
+            <div class="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
+                <h1 class="text-2xl font-bold text-center text-gray-800 mb-2">Admin Panel Login</h1>
+                <p class="text-center text-gray-500 mb-6">Access for authorized personnel only.</p>
+                <form id="login-form">
+                    <div class="mb-4"><label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email Address</label><input type="email" id="email" required class="w-full px-3 py-2 border border-gray-300 rounded-md"></div>
+                    <div class="mb-6"><label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label><input type="password" id="password" required class="w-full px-3 py-2 border border-gray-300 rounded-md"></div>
+                    <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700">Login</button>
+                </form>
+                <div id="login-error" class="mt-4 text-center text-red-600"></div>
+            </div>
+        </div>
+
+        <div id="dashboard-section" class="hidden">
+            <div class="flex h-screen bg-gray-100 font-sans">
+                
+                <nav id="admin-sidebar" class="w-64 bg-gray-800 text-white flex flex-col shrink-0">
+                    <div class="p-6 text-2xl font-bold border-b border-gray-700">Admin Menu</div>
+                    <ul class="flex-grow">
+                        <li><a href="#" class="admin-nav-link active" data-page="page-search">Search</a></li>
+                        <li><a href="#" class="admin-nav-link" data-page="page-pos">Create Order (POS)</a></li>
+                        <li><a href="#" class="admin-nav-link" data-page="page-vouchers">Voucher Management</a></li>
+                    </ul>
+                    <div class="p-4 border-t border-gray-700">
+                        <button id="logout-btn" class="w-full text-left text-gray-400 hover:text-white">Logout</button>
+                    </div>
+                </nav>
+
+                <main class="flex-1 p-8 overflow-y-auto">
+                    <div id="page-search" class="admin-page bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Search Orders & Returns</h2>
+                        <form id="search-form" class="mb-6">
+                            <div class="flex items-center mb-4 space-x-6"><label class="flex items-center"><input type="radio" name="search-type" value="orders" checked class="h-4 w-4"> <span class="ml-2">Orders</span></label><label class="flex items-center"><input type="radio" name="search-type" value="returns" class="h-4 w-4"> <span class="ml-2">Returns</span></label></div>
+                            <label for="search-input" class="block text-sm font-medium text-gray-700 mb-1">Search by Order ID or Customer Email</label>
+                            <div class="flex"><input type="search" id="search-input" class="flex-grow px-3 py-2 border border-gray-300 rounded-l-md"><button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-r-md hover:bg-blue-700">Search</button></div>
+                        </form>
+                        <div id="results-section"><div id="loader" class="hidden"></div><div id="results-message">Enter a search term to begin.</div><div id="results-table" class="hidden"></div></div>
+                    </div>
+
+                    <div id="page-pos" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                         <h2 class="text-2xl font-bold text-gray-800 mb-6">Create New Order (POS)</h2>
+                        <form id="create-order-form" class="space-y-6">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6"><div><h3 class="font-semibold">Customer Details</h3><div><label>Full Name</label><input type="text" id="customer-name" required class="w-full mt-1 px-3 py-2 border rounded-md"></div><div><label>Email</label><input type="email" id="customer-email" required class="w-full mt-1 px-3 py-2 border rounded-md"></div></div><div><h3 class="font-semibold">Delivery Address</h3><div><label>Address Line 1</label><input type="text" id="delivery-address" required class="w-full mt-1 px-3 py-2 border rounded-md"></div><div><label>Postcode</label><input type="text" id="delivery-postcode" required class="w-full mt-1 px-3 py-2 border rounded-md"></div></div></div>
+                            <div><h3 class="font-semibold">Order Items</h3><div id="pos-product-grid" class="mb-4"></div><div id="order-items-summary" class="border rounded-md p-4 min-h-[100px]"><p class="text-gray-500">Click a product to add it to the order.</p></div>
+                                <div class="mt-4 pt-4 border-t">
+                                    <div class="space-y-2 text-right text-gray-700">
+                                        <div class="flex justify-between"><span>Subtotal:</span> <span id="order-subtotal">£0.00</span></div>
+                                        <div class="flex justify-between"><span>Delivery:</span> <span id="order-delivery">£0.00</span></div>
+                                        <div id="pos-discount-row" class="flex justify-between text-green-600 hidden">
+                                            <span>Discount (<span id="pos-discount-code"></span>):</span> 
+                                            <span id="pos-discount-amount">£0.00</span>
+                                        </div>
+                                        <div class="flex justify-between font-bold text-lg text-gray-900"><span>Total:</span> <span id="order-total">£0.00</span></div>
+                                         <p id="pos-warning-message" class="text-sm text-yellow-600 font-medium hidden"></p>
+
+                                    </div>
+                                </div>
+                            </div>
+                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+
+    <div>
+        <h3 class="font-semibold text-gray-700 mb-2">Discount Code</h3>
+        <div class="flex">
+            <input type="text" id="pos-discount-input" placeholder="Enter code" class="flex-grow px-3 py-2 border border-gray-300 rounded-l-md">
+            <button type="button" id="apply-discount-btn" class="bg-gray-600 text-white px-4 py-2 rounded-r-md hover:bg-gray-700">Apply</button>
+        </div>
+        <p id="pos-discount-message" class="text-sm mt-2"></p>
+    </div>
+
+    <div>
+        <h3 class="font-semibold text-gray-700 mb-2">Payment Details</h3>
+        <div>
+            <label for="payment-type" class="block text-sm font-medium text-gray-600">Payment Type</label>
+            <select id="payment-type" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                <option>External Card Reader</option>
+                <option>Card (Phone Payment)</option>
+                <option>Cash</option>
+                <option>Bank Transfer</option>
+            </select>
+        </div>
+        <div class="mt-4">
+           <label for="transaction-id" class="block text-sm font-medium text-gray-600">Transaction ID</label>
+            <input type="text" id="transaction-id" placeholder="Paste ID from payment processor" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+        </div>
+    </div>
+
+</div>
+                            <div class="mt-6 text-right"><button type="submit" class="px-6 py-3 bg-green-600 text-white font-bold rounded-md hover:bg-green-700">Create Order</button></div>
+                        </form>
+                    </div>
+                    <div id="page-vouchers" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-2xl font-bold text-gray-800">Voucher Management</h2>
+    </div>
+
+    <div class="mb-8 p-4 border rounded-md bg-gray-50">
+        <h3 class="font-semibold mb-2">Issue a Stand-Alone Voucher</h3>
+        <p class="text-sm text-gray-500 mb-4">Use this for goodwill gestures or marketing. It will not be linked to a return.</p>
+        <form id="create-standalone-voucher-form" class="flex items-end space-x-4">
+            <div>
+                <label for="standalone-email" class="block text-sm font-medium">Customer Email</label>
+                <input type="email" id="standalone-email" required class="w-full mt-1 px-3 py-2 border rounded-md">
+            </div>
+            <div>
+                <label for="standalone-value" class="block text-sm font-medium">Voucher Value (£)</label>
+                <input type="number" id="standalone-value" step="0.01" required class="w-full mt-1 px-3 py-2 border rounded-md">
+            </div>
+            <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 h-11">Generate</button>
+        </form>
+    </div>
+
+    <h3 class="font-semibold mb-4">Voucher History</h3>
+    <div id="vouchers-table-container">
+        </div>
+</div>
+                </main>
             </div>
         </div>
     </div>
@@ -74,256 +188,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
-
-    <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyBzU9YCpen0fJ12eGSnLeQGXsavSa9kX3w",
-            authDomain: "luxury-hampers-app.firebaseapp.com",
-            projectId: "luxury-hampers-app",
-            storageBucket: "luxury-hampers-app.firebasestorage.app",
-            messagingSenderId: "314612428903",
-            appId: "1:314612428903:web:39c34c1d63e0aa818124c2"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const fbAuth = firebase.auth();
-        const db = firebase.firestore();
-
-        const loginSection = document.getElementById('login-section');
-        const dashboardSection = document.getElementById('dashboard-section');
-        const loginForm = document.getElementById('login-form');
-        const loginError = document.getElementById('login-error');
-        const logoutBtn = document.getElementById('logout-btn');
-        const searchForm = document.getElementById('search-form');
-        const searchInput = document.getElementById('search-input');
-        const loader = document.getElementById('loader');
-        const resultsMessage = document.getElementById('results-message');
-        const resultsTableContainer = document.getElementById('results-table');
-        const returnsLoader = document.getElementById('returns-loader');
-        const returnsMessage = document.getElementById('returns-message');
-        const returnsTableContainer = document.getElementById('returns-table-container');
-
-        fbAuth.onAuthStateChanged(async (user) => {
-            if (user) {
-                const userDoc = await db.collection('users').doc(user.uid).get();
-                if (userDoc.exists && userDoc.data().isAdmin === true) {
-                    loginSection.classList.add('hidden');
-                    dashboardSection.classList.remove('hidden');
-                    fetchAndDisplayReturns();
-                } else {
-                    await fbAuth.signOut();
-                    loginError.textContent = 'Access Denied. You do not have admin privileges.';
-                }
-            } else {
-                loginSection.classList.remove('hidden');
-                dashboardSection.classList.add('hidden');
-            }
-        });
-
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-            try {
-                await fbAuth.signInWithEmailAndPassword(email, password);
-            } catch (error) {
-                loginError.textContent = 'Login failed. Please check your credentials.';
-            }
-        });
-
-        logoutBtn.addEventListener('click', () => fbAuth.signOut());
-
-        searchForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const query = searchInput.value.trim();
-            if (!query) return;
-            loader.classList.remove('hidden');
-            resultsMessage.classList.add('hidden');
-            resultsTableContainer.classList.add('hidden');
-            try {
-                const token = await fbAuth.currentUser.getIdToken();
-                const isEmail = query.includes('@');
-                const searchParam = isEmail ? `email=${encodeURIComponent(query)}` : `orderId=${encodeURIComponent(query)}`;
-                const response = await fetch(`/api/find-order?${searchParam}`, { headers: { 'Authorization': `Bearer ${token}` } });
-                if (!response.ok) throw new Error(response.status === 404 ? 'No orders found.' : 'API request failed.');
-                const orders = await response.json();
-                renderResults(orders);
-            } catch (error) {
-                resultsMessage.textContent = `Error: ${error.message}`;
-                resultsMessage.classList.remove('hidden');
-            } finally {
-                loader.classList.add('hidden');
-            }
-        });
-
-       // REPLACE the existing renderResults function in your <script> tag with this one.
-
-/**
- * Renders the fetched order data into a clean HTML table.
- * @param {Array<Object>} orders - An array of order objects.
- */
-function renderResults(orders) {
-    if (!orders || orders.length === 0) {
-        resultsMessage.textContent = 'No orders found matching your search.';
-        resultsMessage.classList.remove('hidden');
-        resultsTableContainer.classList.add('hidden');
-        return;
-    }
-
-    let tableHtml = `
-        <div class="overflow-x-auto">
-            <table class="min-w-full bg-white border border-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-200">
-    `;
-
-    orders.forEach(order => {
-        // --- THIS IS THE FIX ---
-        // The API sends a simple date string, so we parse it directly.
-        const orderDate = new Date(order.orderDate).toLocaleDateString();
-
-        // This logic correctly handles both guest and registered user data.
-        const customerName = order.deliveryAddress?.fullName || order.customerName || 'N/A';
-        const customerEmail = order.deliveryAddress?.email || order.customerEmail || 'N/A';
-        
-        const statusClass = `status-${(order.status || 'pending').toLowerCase()}`;
-        
-        tableHtml += `
-            <tr>
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${order.id}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                    <div>${customerName}</div>
-                    <div class="text-xs text-gray-500">${customerEmail}</div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${orderDate}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">£${order.totalAmount.toFixed(2)}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                    <span class="status-badge ${statusClass}">${order.status || 'Pending'}</span>
-                </td>
-            </tr>
-        `;
-    });
-
-    tableHtml += `</tbody></table></div>`;
-    
-    resultsTableContainer.innerHTML = tableHtml;
-    resultsTableContainer.classList.remove('hidden');
-}
-
-        async function fetchAndDisplayReturns() {
-            returnsLoader.classList.remove('hidden');
-            returnsMessage.classList.add('hidden');
-            returnsTableContainer.classList.add('hidden');
-            try {
-                const token = await fbAuth.currentUser.getIdToken();
-                const response = await fetch('/api/get-all-returns', { headers: { 'Authorization': `Bearer ${token}` } });
-                if (!response.ok) throw new Error('Failed to fetch returns.');
-                const returns = await response.json();
-                renderReturnsTable(returns);
-            } catch (error) {
-                returnsMessage.textContent = `Error: ${error.message}`;
-                returnsMessage.classList.remove('hidden');
-            } finally {
-                returnsLoader.classList.add('hidden');
-            }
-        }
-
-        function renderReturnsTable(returns) {
-    if (!returns || returns.length === 0) {
-        returnsMessage.textContent = 'No return requests found.';
-        returnsMessage.classList.remove('hidden');
-        returnsTableContainer.classList.add('hidden');
-        return;
-    }
-
-    let tableHtml = `<div class="overflow-x-auto"><table class="min-w-full bg-white border">
-        <thead class="bg-gray-50"><tr>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order ID</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
-        </tr></thead><tbody class="divide-y divide-gray-200">`;
-
-    returns.forEach(ret => {
-        const requestDate = ret.requestDate?.seconds ? new Date(ret.requestDate.seconds * 1000).toLocaleDateString() : 'N/A';
-        const statusClass = `status-${(ret.status || 'pending').toLowerCase()}`;
-        // Only show buttons if the status is 'Pending'
-        const actionButtons = ret.status === 'Pending' ? `
-            <button class="return-action-btn bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1 rounded-full text-xs" data-user-id="${ret.userId}" data-return-id="${ret.returnId}" data-action="Rejected">Reject</button>
-            <button class="return-action-btn bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1 rounded-full text-xs" data-user-id="${ret.userId}" data-return-id="${ret.returnId}" data-action="Approved">Approve</button>
-            ` : '<span>-</span>';
-
-        tableHtml += `
-            <tr id="return-row-${ret.returnId}">
-                <td class="px-6 py-4 text-sm">${ret.customerName}</td>
-                <td class="px-6 py-4 text-sm">${ret.orderId}</td>
-                <td class="px-6 py-4 text-sm">${requestDate}</td>
-                <td class="px-6 py-4 text-sm">
-                    <span class="status-badge ${statusClass}">${ret.status || 'Pending'}</span>
-                </td>
-                <td class="px-6 py-4 text-center text-sm space-x-2">${actionButtons}</td>
-            </tr>`;
-    });
-
-    tableHtml += `</tbody></table></div>`;
-    returnsTableContainer.innerHTML = tableHtml;
-    returnsTableContainer.classList.remove('hidden');
-}
-
-       dashboardSection.addEventListener('click', async (e) => {
-    const target = e.target.closest('.return-action-btn');
-    if (!target) return;
-
-    target.disabled = true;
-    target.parentElement.querySelectorAll('button').forEach(btn => btn.disabled = true);
-    target.textContent = 'Processing...';
-
-    const { userId, returnId, orderId, action } = target.dataset;
-    
-    try {
-        const token = await fbAuth.currentUser.getIdToken();
-        // First, update the return's status
-        await fetch('/api/update-return-status', {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, returnId, newStatus: action })
-        });
-
-        // --- THIS IS THE NEW LOGIC ---
-        // If the return was approved, also update the original order's status
-        if (action === 'Approved') {
-            await fetch('/api/update-order-status', {
-                method: 'PUT',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ orderId: orderId, newStatus: 'Returned' })
-            });
-        }
-        // --- END OF NEW LOGIC ---
-
-        const row = document.getElementById(`return-row-${returnId}`);
-        if (row) {
-            const statusBadge = row.querySelector('.status-badge');
-            const actionCell = row.querySelector('td:last-child');
-            statusBadge.textContent = action;
-            statusBadge.className = `status-badge status-${action.toLowerCase()}`;
-            actionCell.innerHTML = `<span>${action}</span>`;
-        }
-    } catch (error) {
-        console.error('Failed to update status:', error);
-        alert(`Error: ${error.message}`);
-        target.disabled = false;
-        target.parentElement.querySelectorAll('button').forEach(btn => btn.disabled = false);
-        target.textContent = action;
-    }
-});
-    </script>
+    <script src="admin.js?v=2"></script>
 </body>
 </html>

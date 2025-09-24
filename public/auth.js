@@ -5,14 +5,14 @@
 const auth = (() => {
     // --- IMPORTANT ACTION REQUIRED ---
     // PASTE YOUR FIREBASE CONFIG OBJECT HERE
-    const firebaseConfig = {
-    apiKey: "AIzaSyBzU9YCpen0fJ12eGSnLeQGXsavSa9kX3w",
-    authDomain: "luxury-hampers-app.firebaseapp.com",
-    projectId: "luxury-hampers-app",
-    storageBucket: "luxury-hampers-app.firebasestorage.app",
-    messagingSenderId: "314612428903",
-    appId: "1:314612428903:web:39c34c1d63e0aa818124c2",
-    measurementId: "G-LXPLK738BM"
+     const firebaseConfig = {
+        apiKey: process.env.VITE_API_KEY,
+        authDomain: process.env.VITE_AUTH_DOMAIN,
+        projectId: process.env.VITE_PROJECT_ID,
+        storageBucket: process.env.VITE_STORAGE_BUCKET,
+        messagingSenderId: process.env.VITE_MESSAGING_SENDER_ID,
+        appId: process.env.VITE_APP_ID,
+        measurementId: process.env.VITE_MEASUREMENT_ID
   };
 
 

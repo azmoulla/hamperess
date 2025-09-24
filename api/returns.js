@@ -1,142 +1,115 @@
+// FILE: /api/returns.js (This is the final, corrected version)
 import admin from 'firebase-admin';
+import { db } from './_lib/firebase-admin-helper.js';
 
-// --- Initialize Firebase Admin SDK ---
-if (!admin.apps.length) {
-  try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
-  } catch (error) {
-    console.error('Firebase admin initialization error:', error.stack);
-  }
+// Helper to generate new Return IDs
+function generateReturnId() {
+    const timestamp = Date.now().toString().slice(-5);
+    const randomChars = Math.random().toString(36).substring(2, 5).toUpperCase();
+    return `RET-${timestamp}-${randomChars}`;
 }
 
-// Get db and auth instances once, matching the working cart.js pattern
-const db = admin.firestore();
-const auth = admin.auth();
-
-/**
- * Verifies the Firebase ID token from the Authorization header.
- * @param {object} req - The request object.
- * @returns {Promise<string|null>} The user's UID if valid, otherwise null.
- */
 async function getVerifiedUid(req) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
     const idToken = authHeader.split('Bearer ')[1];
     try {
-        const decodedToken = await auth.verifyIdToken(idToken);
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
         return decodedToken.uid;
     } catch (error) {
-        console.error('Error verifying auth token:', error);
         return null;
     }
 }
 
-// --- Main API Handler ---
 export default async function handler(req, res) {
-    // --- Standard CORS & Method Check ---
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-    if (req.method === 'OPTIONS') return res.status(200).end();
-
     const uid = await getVerifiedUid(req);
-    if (!uid) return res.status(401).json({ error: 'Unauthorized' });
+    if (!uid) return res.status(401).json({ error: 'Unauthorized.' });
 
-    const returnsCollectionRef = db.collection('users').doc(uid).collection('returns');
-
-    try {
-        if (req.method === 'GET') {
-            const snapshot = await returnsCollectionRef.orderBy('requestDate', 'desc').get();
-            if (snapshot.empty) {
-                return res.status(200).json([]);
+    // --- LOGIC FOR CREATING A NEW RETURN (POST) ---
+    if (req.method === 'POST') {
+        try {
+            const { returnRequest } = req.body;
+            if (!returnRequest || !returnRequest.orderId || !returnRequest.items) {
+                return res.status(400).json({ error: 'Return request with orderId and items is required.' });
             }
-            const returns = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            res.status(200).json(returns);
 
-        } else if (req.method === 'POST') {
-    // --- THIS IS THE NEW, SECURE POST LOGIC ---
-    const { returnRequest } = req.body;
-    if (!returnRequest || !returnRequest.orderId || !returnRequest.items || returnRequest.items.length === 0) {
-        return res.status(400).json({ error: 'Invalid return data provided.' });
+            const { orderId, reason, items, refundAmount, desiredOutcome } = returnRequest;
+            const orderQuery = db.collection('orders').where('id', '==', orderId).where('userId', '==', uid).limit(1);
+            const orderSnapshot = await orderQuery.get();
+
+            if (orderSnapshot.empty) {
+                throw new Error('Original order not found.');
+            }
+            const orderData = orderSnapshot.docs[0].data();
+
+            const newReturnRef = db.collection('users').doc(uid).collection('returns').doc();
+            const newReturnPayload = {
+                id: generateReturnId(),
+                orderId: orderId,
+                customerName: orderData.customerName || 'N/A',
+                customerEmail: orderData.customerEmail || 'unknown@example.com',
+                reason: reason,
+                items: items,
+                refundAmount: refundAmount,
+                desiredOutcome: desiredOutcome,
+                requestDate: admin.firestore.FieldValue.serverTimestamp(),
+                status: 'Pending'
+            };
+
+            await newReturnRef.set(newReturnPayload);
+            res.status(200).json({ success: true, returnId: newReturnPayload.id });
+
+        } catch (error) {
+            console.error('Error creating return request:', error);
+            res.status(500).json({ error: error.message || 'An unexpected server error occurred.' });
+        }
     }
-
-    // Server-side validation
-    const orderRef = db.collection('orders').doc(returnRequest.orderId);
-    const existingReturnsRef = db.collection('users').doc(uid).collection('returns');
-
-    const [orderDoc, existingReturnsSnapshot] = await Promise.all([
-        orderRef.get(),
-        existingReturnsRef.where('orderId', '==', returnRequest.orderId).get()
-    ]);
-
-    if (!orderDoc.exists) {
-        return res.status(404).json({ error: 'Original order not found.' });
-    }
-
-    const orderData = orderDoc.data();
-    if (orderData.userId !== uid) {
-        return res.status(403).json({ error: 'This order does not belong to you.' });
-    }
-
-    // Calculate already returned quantities from non-cancelled/rejected returns
-    const returnedQuantities = {};
-    existingReturnsSnapshot.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.status !== 'Cancelled' && data.status !== 'Rejected') {
-            data.items.forEach(item => {
-                returnedQuantities[item.productId] = (returnedQuantities[item.productId] || 0) + item.quantity;
+    
+    // --- LOGIC FOR GETTING ALL RETURNS (GET) ---
+    if (req.method === 'GET') {
+        try {
+            const returnsRef = db.collection('users').doc(uid).collection('returns').orderBy('requestDate', 'desc');
+            const snapshot = await returnsRef.get();
+            const returns = snapshot.docs.map(doc => {
+                const data = doc.data();
+                // THIS FIXES THE "INVALID DATE" ERROR
+                if (data.requestDate && typeof data.requestDate.toDate === 'function') {
+                    data.requestDate = data.requestDate.toDate().toISOString();
+                }
+                return data;
             });
-        }
-    });
-
-    // Check if the new request is valid
-    for (const itemToReturn of returnRequest.items) {
-        const originalItem = orderData.items.find(i => i.productId === itemToReturn.productId);
-        if (!originalItem) {
-            return res.status(400).json({ error: `Item ${itemToReturn.title} was not in the original order.` });
-        }
-        const alreadyReturned = returnedQuantities[itemToReturn.productId] || 0;
-        if (itemToReturn.quantity > (originalItem.quantity - alreadyReturned)) {
-            return res.status(400).json({ error: `You cannot return ${itemToReturn.quantity} of ${itemToReturn.title}. Only ${originalItem.quantity - alreadyReturned} are available to be returned.` });
+            res.status(200).json(returns);
+        } catch (error) {
+            console.error('Error fetching returns:', error);
+            res.status(500).json({ error: 'Internal Server Error' });
         }
     }
+    
+    // --- LOGIC FOR CANCELLING A RETURN (PUT) ---
+    if (req.method === 'PUT') {
+        try {
+            const { returnId } = req.query;
+            if (!returnId) return res.status(400).json({ error: 'Return ID is required.' });
 
-    const newReturnData = {
-        ...returnRequest,
-        status: 'Pending',
-        requestDate: admin.firestore.FieldValue.serverTimestamp()
-    };
-
-    const newReturnRef = await db.collection('users').doc(uid).collection('returns').add(newReturnData);
-    res.status(201).json({ success: true, returnId: newReturnRef.id });
-    // --- END OF SECURE POST LOGIC ---
-         
-
-          
-           
+            const returnsCollectionRef = db.collection('users').doc(uid).collection('returns');
             
-            } else if (req.method === 'PUT') {
-        const { returnId } = req.query; // Get the ID from the URL query
-        if (!returnId) {
-            return res.status(400).json({ error: 'Return ID is required.' });
+            // THIS FIXES THE "INTERNAL SERVER ERROR" FOR NEW RETURN IDS
+            const query = returnsCollectionRef.where('id', '==', returnId).limit(1);
+            const snapshot = await query.get();
+
+            if (snapshot.empty) {
+                throw new Error(`No return found with the ID: ${returnId}`);
+            }
+
+            const returnDocRef = snapshot.docs[0].ref;
+            await returnDocRef.update({ status: 'Cancelled' });
+            
+            res.status(200).json({ success: true });
+
+        } catch (error)
+        {
+            console.error('Error cancelling return:', error);
+            res.status(500).json({ error: 'Internal Server Error', details: error.message });
         }
-
-        const returnDocRef = returnsCollectionRef.doc(returnId);
-        
-        // Update the status field to 'Cancelled'
-        await returnDocRef.update({ status: 'Cancelled' });
-
-        res.status(200).json({ success: true, message: 'Return cancelled successfully.' });
-    // --- END OF REPLACEMENT BLOCK ---
-
-        } else {
-            res.status(405).end('Method Not Allowed');
-        }
-    } catch (error) {
-        console.error(`[API/RETURNS] Error processing returns for user ${uid}:`, error);
-        res.status(500).json({ error: 'Internal Server Error' });
     }
 }

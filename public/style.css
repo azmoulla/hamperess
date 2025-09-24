@@ -3143,3 +3143,88 @@ body.product-list-active .search-container {
     background-color: #7f8c8d; /* A neutral gray color */
 }
 /* --- END OF NEW RULE --- */
+
+/* Add this to your main CSS file */
+
+#order-actions-container {
+    text-align: right;
+    padding: 1rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+
+.cancellation-prompt {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+    text-align: center;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 1rem;
+}
+
+.order-summary-item .cancellation-control {
+    margin-right: 1rem;
+}
+
+/* General Status Badge Styles */
+.order-status, .status-badge {
+    padding: 4px 10px;
+    border-radius: 9999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+/* Specific Status Colors */
+.status-pending {
+    background-color: #fde047; /* Bright Yellow */
+    color: #713f12;           /* Dark text for readability */
+    font-weight: normal;      /* Resets the font to normal weight */
+    text-transform: none;     /* Removes the uppercase text */
+}
+
+.status-cancelled, .status-partially {
+    background-color: #e5e7eb;
+    color: #4b5563;
+}
+
+.status-returned {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+
+.status-shipped, .status-dispatched {
+    background-color: #dcfce7;
+    color: #166534;
+}
+/* Base style for all status badges */
+.order-status {
+    padding: 4px 10px;
+    border-radius: 9999px;
+    font-size: 0.8rem;
+}
+
+/* New Color Classes */
+.status-yellow {
+    background-color: #fde047; /* Bright Yellow */
+    color: #713f12;           /* Dark text for readability */
+    font-weight: normal;      /* Resets font to normal weight */
+    text-transform: none;     /* Removes uppercase text */
+}
+
+.status-grey, .status-default {
+    background-color: #e5e7eb; /* Grey */
+    color: #4b5563;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-green {
+    background-color: #dcfce7; /* Green */
+    color: #166534;
+    font-weight: 600;
+    text-transform: uppercase;
+}

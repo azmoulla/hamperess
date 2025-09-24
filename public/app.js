@@ -580,11 +580,12 @@ function createSlug(text) {
 // In app.js
 
 // In app.js
-document.addEventListener('DOMContentLoaded', async () => { // Make the function async
+document.addEventListener('DOMContentLoaded', async () => {
     console.log("DOM content loaded. Initializing app...");
 
-    // 1. FIX: Fetch critical config first and wait for it
+    // 1. FIX: Fetch critical config and menu data FIRST and wait for them.
     await fetchConfig();
+    await fetchMenu(); // This call is now correctly awaited here.
 
     // 2. Setup core UI and load cart (which can now safely use appConfig)
     setupEventListeners();
@@ -600,8 +601,8 @@ document.addEventListener('DOMContentLoaded', async () => { // Make the function
 
     // 5. Start fetching all OTHER data in the background
     const startupTasks = [
-        fetchProducts(), fetchDiscounts(), fetchMenu(), fetchFooterInfo(),
-        fetchOccasions(), fetchFeatures(), fetchTestimonials() // Remove fetchConfig() from here
+        fetchProducts(), fetchDiscounts(), fetchFooterInfo(),
+        fetchOccasions(), fetchFeatures(), fetchTestimonials()
     ];
     Promise.allSettled(startupTasks).then(() => {
         console.log("Background data loading has completed.");
@@ -839,10 +840,29 @@ function handleGlobalClick(e) {
 
 // In app.js
 
+// Replace your existing displayMenu function with this diagnostic version
 function displayMenu(menuItems) {
+    // --- DIAGNOSTIC TEST ---
+    console.log("--- MENU TEST ---");
+    console.log("1. displayMenu function was called successfully.");
+    console.log("2. Data received (menuItems):", JSON.stringify(menuItems, null, 2));
+    console.log("3. Is menuItems an array?", Array.isArray(menuItems));
+    // ------------------------------------
+
     const navLinksContainer = document.getElementById('nav-links');
     const mobileNavLinks = document.getElementById('mobile-nav-links');
-    if (!navLinksContainer || !mobileNavLinks) return;
+    if (!navLinksContainer || !mobileNavLinks) {
+        console.error("4. ERROR: Could not find #nav-links or #mobile-nav-links elements in the HTML.");
+        return;
+    }
+
+    if (!Array.isArray(menuItems) || menuItems.length === 0) {
+        console.error("4. ERROR: The menuItems data is not a valid array or is empty. Cannot build menu.");
+        // We will display a fallback message to show the function is working.
+        navLinksContainer.innerHTML = '<li>Menu data failed to load.</li>';
+        mobileNavLinks.innerHTML = '<li>Menu data failed to load.</li>';
+        return;
+    }
 
     let mobileMenuHtml = `<a href="/#/account" class="mobile-nav-link-item account-link"><i class="fa-solid fa-user"></i> My Account / Log In</a>`;
     let desktopMenuHtml = '';
@@ -851,11 +871,9 @@ function displayMenu(menuItems) {
         let link = '';
         const saleClass = item.isSale ? 'sale-item' : '';
 
-        // This is the fix: check for the special target
         if (item.target === '/create-your-own') {
             link = '/#/create-your-own';
         } else {
-            // Otherwise, create the standard category link
             link = `/#/category/${item.argument}`;
         }
 
@@ -865,8 +883,8 @@ function displayMenu(menuItems) {
 
     navLinksContainer.innerHTML = desktopMenuHtml;
     mobileNavLinks.innerHTML = mobileMenuHtml;
+    console.log("4. SUCCESS: Menu HTML was successfully rendered to the page.");
 }
-
 // ------------------------------------------------------------------ //
 // -------------------- KIT: DATA FETCHING (API) -------------------- //
 // ------------------------------------------------------------------ //
@@ -912,10 +930,52 @@ async function fetchWithAuth(url, options = {}) {
     }
 }
 
-// Add this with your other data fetching functions
-async function fetchDiscounts() {
-    console.log("fetchDiscounts: Fetching discount codes.");
-    allDiscounts = await fetchData('data/discounts.json') || [];
+
+    // REPLACE the existing applyDiscount function in app.js with this new version
+
+    async function applyDiscount(code, source = 'checkout') {
+    const messageEl = document.getElementById(`${source}-discount-message`);
+    const inputEl = document.getElementById(`${source}-discount-code`);
+    const trimmedCode = code.trim();
+
+    if (!trimmedCode) {
+        if (appliedDiscount) {
+            messageEl.textContent = 'Discount removed.';
+        } else {
+            messageEl.textContent = '';
+        }
+        appliedDiscount = null;
+        messageEl.className = 'discount-message';
+        if (inputEl) inputEl.value = '';
+        updateCartTotals();
+        return;
+    }
+
+    try {
+        // Call the new back-end API to validate the code
+        const response = await fetch(`/api/validate-discount?code=${trimmedCode}`);
+        const discountData = await response.json();
+
+        if (!response.ok) {
+            // If the API returns an error (like 404 Not Found), display it
+            throw new Error(discountData.error || 'Invalid discount code.');
+        }
+        
+        // If the code is valid, apply it
+        appliedDiscount = discountData;
+        messageEl.textContent = `Success! "${discountData.description}" applied.`;
+        messageEl.className = 'discount-message success';
+
+    } catch (error) {
+        // If the fetch fails or the code is invalid, show an error
+        messageEl.textContent = error.message;
+        messageEl.className = 'discount-message error';
+        // IMPORTANT: Do not remove an existing valid discount if a new invalid one is entered
+    } finally {
+        // Clear the input field and update totals regardless of the outcome
+        if (inputEl) inputEl.value = '';
+        updateCartTotals();
+    }
 }
 
 async function fetchData(url) {
@@ -933,6 +993,8 @@ async function fetchData(url) {
 
 // REPLACE your entire existing fetchInitialUserData function with this one.
 
+// In app.js, REPLACE this entire function
+
 async function fetchInitialUserData() {
     if (auth.isLoggedIn()) {
         try {
@@ -940,13 +1002,14 @@ async function fetchInitialUserData() {
             
             const results = await Promise.allSettled([
                 fetchWithAuth('/api/addresses'),
-                fetchWithAuth('/api/get-orders'),
-                fetchWithAuth('/api/returns') // <-- ADDED: The call to fetch returns
+                // THIS LINE IS THE FIX: It forces the browser to ignore its cache for orders.
+                fetchWithAuth('/api/get-orders', { cache: 'no-cache' }), 
+                fetchWithAuth('/api/returns', { cache: 'no-cache' }) // Also good practice to add for returns
             ]);
 
             const addressesResult = results[0];
             const ordersResult = results[1];
-            const returnsResult = results[2]; // <-- ADDED: Get the result for the returns call
+            const returnsResult = results[2];
 
             if (addressesResult.status === 'fulfilled') {
                 userAddresses = addressesResult.value;
@@ -964,7 +1027,6 @@ async function fetchInitialUserData() {
                 userOrders = [];
             }
 
-            // --- ADDED: This block processes the result of the returns API call ---
             if (returnsResult.status === 'fulfilled') {
                 userReturns = returnsResult.value;
                 console.log("Successfully fetched returns:", userReturns.length);
@@ -972,23 +1034,20 @@ async function fetchInitialUserData() {
                 console.error("Failed to fetch user returns:", returnsResult.reason);
                 userReturns = [];
             }
-            // --- END ADDED BLOCK ---
             
         } catch (error) {
             console.error("A critical error occurred during initial user data fetch:", error);
             userAddresses = [];
             userOrders = [];
-            userReturns = []; // Ensure returns is also cleared on a critical error
+            userReturns = [];
         }
     } else {
-        // Clear data for logged-out users
         userOrders = [];
         userAddresses = [];
         userReturns = [];
     }
     return Promise.resolve();
 }
-
 
 async function fetchProducts() {
     console.log("fetchProducts: Fetching products data from backend API.");
@@ -1749,6 +1808,7 @@ function handleMenuClick(menuItem) {
 
 function handleSearch(e) {
     e.preventDefault();
+    
     updateProductView();
 }
 
@@ -2371,47 +2431,6 @@ function updateCartCount() {
 
 // REPLACE this entire function in app.js
 
-function applyDiscount(code, source = 'checkout') {
-    const messageEl = document.getElementById(`${source}-discount-message`);
-    const inputEl = document.getElementById(`${source}-discount-code`);
-    const trimmedCode = code.trim();
-
-    // If the user submits an empty code, clear the current discount.
-    if (!trimmedCode) {
-        if (appliedDiscount) { // Only show message if a discount was actually removed
-            messageEl.textContent = 'Discount removed.';
-        } else {
-            messageEl.textContent = '';
-        }
-        appliedDiscount = null;
-        messageEl.className = 'discount-message';
-        if (inputEl) inputEl.value = '';
-        updateCartTotals();
-        return;
-    }
-
-    const discount = allDiscounts.find(d => d.code.toUpperCase() === trimmedCode.toUpperCase());
-
-    if (discount) {
-        // A valid code was entered.
-        if (appliedDiscount && appliedDiscount.code !== discount.code) {
-            messageEl.textContent = `Discount "${appliedDiscount.code}" replaced with "${discount.code}".`;
-        } else {
-            messageEl.textContent = `Success! "${discount.code}" applied.`;
-        }
-        appliedDiscount = discount;
-        messageEl.className = 'discount-message success';
-    } else {
-        // An invalid code was entered. Show an error but DO NOT remove an existing discount.
-        messageEl.textContent = 'Invalid discount code.';
-        messageEl.className = 'discount-message error';
-    }
-    
-    // Clear the input field after every attempt.
-    if (inputEl) inputEl.value = '';
-    
-    updateCartTotals();
-}
 
 function updateCartTotals() {
     // This function now uses the central calculateTotals helper
@@ -2579,6 +2598,7 @@ function displayCheckoutPage() {
 
 
 // REPLACE your existing placeOrder function
+// Replace your existing placeOrder function with this
 async function placeOrder() {
     const placeOrderBtn = document.getElementById('place-order-btn');
     const btnText = placeOrderBtn.querySelector('.btn-text');
@@ -2596,7 +2616,7 @@ async function placeOrder() {
         
         const isLoggedIn = auth.isLoggedIn();
         if (!isLoggedIn) {
-            // This is a safeguard; this function should only be called for logged-in users now.
+            // This is now a guest checkout flow.
             return placeGuestOrder(); 
         }
 
@@ -2604,7 +2624,10 @@ async function placeOrder() {
         const selectedAddress = userAddresses.find(addr => addr.id === selectedCheckoutAddressId);
         if (!selectedAddress) throw new Error('Please select a delivery address.');
         
+        // --- THIS IS THE FIX ---
+        // We must call calculateTotals() here to define the variables.
         const { itemsSubtotal, deliveryChargeApplied, discountApplied, totalAmount } = calculateTotals();
+        // --- END OF FIX ---
 
         const orderPayload = {
             userId: currentUser.uid,
@@ -2618,25 +2641,33 @@ async function placeOrder() {
                 if (item.isCustom) orderItem.contents = item.contents;
                 return orderItem;
             }),
-            itemsSubtotal, deliveryChargeApplied, discountApplied, totalAmount
+            itemsSubtotal,
+            deliveryChargeApplied,
+            discountApplied,
+            totalAmount,
+            appliedDiscount: appliedDiscount || null 
         };
 
         const result = await fetchWithAuth('/api/create-order', {
             method: 'POST', body: JSON.stringify({ orderPayload })
         });
         
+        // Fetch the latest orders after placing a new one
         userOrders = await fetchWithAuth('/api/get-orders');
         
         pageCheckout.innerHTML = `<div class="order-confirmation"><h2>Thank You, ${selectedAddress.fullName.split(' ')[0]}!</h2><p>Your order #${result.orderId} has been placed successfully.</p><button id="back-to-home-btn" class="btn btn-primary btn-full-width">Continue Shopping</button></div>`;
-        document.getElementById('back-to-home-btn').addEventListener('click', showAllProducts);
+        document.getElementById('back-to-home-btn').addEventListener('click', () => router.navigate('/'));
         
-        cart = []; appliedDiscount = null; selectedCheckoutAddressId = null; checkoutStep = 1;
+        cart = []; 
+        appliedDiscount = null; 
+        selectedCheckoutAddressId = null; 
+        checkoutStep = 1;
         updateCart();
 
     } catch (error) {
         console.error("CRITICAL ERROR in placeOrder:", error);
         showConfirmationModal(`Order Failed: ${error.message}`);
-        // Re-enable the button on failure
+        
         placeOrderBtn.disabled = false;
         btnText.style.display = 'inline';
         spinner.style.display = 'none';
@@ -2796,160 +2827,205 @@ async function placeGuestOrder() {
 // In app.js
 // REPLACE your entire existing showReturnRequestPage function with this one.
 
+// Add this new function to app.js
+
+// In app.js
+async function handleOrderCancellation(orderId, type) {
+    let itemsToCancel = [];
+    let confirmationMessage = '';
+
+    if (type === 'full') {
+        confirmationMessage = 'Are you sure you want to cancel this entire order? This action cannot be undone.';
+    } else { // Partial cancellation
+        const form = document.getElementById('cancel-order-form');
+        const checkedItems = form.querySelectorAll('input[name="cancel-item"]:checked');
+        
+        if (checkedItems.length === 0) {
+            showConfirmationModal('Please select at least one item to cancel.');
+            return;
+        }
+
+        checkedItems.forEach(item => {
+            itemsToCancel.push({
+                productId: item.value,
+                quantity: parseInt(item.dataset.quantity, 10)
+            });
+        });
+        confirmationMessage = `Are you sure you want to cancel the selected ${itemsToCancel.length} item(s)?`;
+    }
+
+    showConfirmationModal(confirmationMessage, async () => {
+        try {
+            await fetchWithAuth(`/api/cancel-order`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    orderId,
+                    itemsToCancel: type === 'full' ? [] : itemsToCancel
+                })
+            });
+
+            await fetchInitialUserData();
+            renderOrderDetailPage(orderId);
+            showConfirmationModal('Your cancellation request has been processed successfully.');
+
+        } catch (error) {
+            console.error('Failed to cancel order:', error);
+            showConfirmationModal(`Error: ${error.message}`);
+        }
+    });
+}
+
 function showReturnRequestPage(order) {
     const triggerContainer = document.getElementById('return-trigger-container');
     if (triggerContainer) triggerContainer.style.display = 'none';
 
-    // First, calculate which items are available for return
+    // First, calculate which items are actually available for return
     const returnedQuantities = {};
     userReturns
-        .filter(r => r.orderId === order.id && r.status !== 'Cancelled' && r.status !== 'Rejected')
+        .filter(r => r.orderId === order.id && !['Cancelled', 'Rejected'].includes(r.status))
         .flatMap(r => r.items)
         .forEach(item => {
             returnedQuantities[item.productId] = (returnedQuantities[item.productId] || 0) + item.quantity;
         });
 
+    const returnableItems = order.items.filter(item => {
+        const alreadyReturned = returnedQuantities[item.productId] || 0;
+        return (item.quantity - alreadyReturned) > 0;
+    });
+    
+    const isSingleReturnableItem = returnableItems.length === 1;
+
+    // This HTML variable contains all the necessary sections
     const returnFormHtml = `
         <form id="direct-return-form" class="detail-card">
-            <h4>Request a Return</h4>
+            <h4>Request a Return for Order #${order.id}</h4>
             <p>Select the items and quantities you wish to return.</p>
-            <div class="form-group">
+            
+            <div class="form-group" id="returnable-items-list">
             ${order.items.map(item => {
                 const alreadyReturned = returnedQuantities[item.productId] || 0;
                 const returnableQty = item.quantity - alreadyReturned;
-
                 if (returnableQty <= 0) {
-                    return `<div class="return-item-control disabled"><p>✓ <em>${item.title} (Already Returned)</em></p></div>`;
+                    return `<div class="return-item-control disabled"><p>✓ <em>${item.title} (Already Returned/Returning)</em></p></div>`;
                 }
+                const checkedAttr = isSingleReturnableItem ? 'checked disabled' : '';
                 return `
-                <div class="return-item-control">
+                <div class="return-item-control" data-price="${item.price}">
                     <div class="form-group-checkbox">
-                        <input type="checkbox" name="return-item" id="return-item-${item.productId}" value="${item.productId}">
+                        <input type="checkbox" name="return-item" id="return-item-${item.productId}" value="${item.productId}" ${checkedAttr}>
                         <label for="return-item-${item.productId}">${item.title}</label>
                     </div>
-                    <div class="quantity-selector-inline" style="display: none;">
+                    <div class="quantity-selector-inline" style="${isSingleReturnableItem ? 'display: flex;' : 'display: none;'}">
                         <button type="button" class="quantity-btn decrease-return-qty" data-product-id="${item.productId}">-</button>
-                        <input type="number" class="quantity-input-return" id="return-qty-${item.productId}" value="1" min="1" max="${returnableQty}" readonly>
+                        <input type="number" class="quantity-input-return" id="return-qty-${item.productId}" value="1" min="1" max="${returnableQty}">
                         <button type="button" class="quantity-btn increase-return-qty" data-product-id="${item.productId}">+</button>
                     </div>
-                    <p class="return-price">£${item.price.toFixed(2)} ea</p>
                 </div>`;
             }).join('')}
             </div>
-            <div class="form-group" id="return-reason-group" style="display: none;">
-                <label for="return-reason">Reason for return:</label>
-                <textarea id="return-reason" rows="6" required></textarea>
+            
+            <div class="form-group" id="return-outcome-group" style="display: none;">
+                <label class="form-label">What would you like?</label>
+                <div class="radio-group">
+                    <label class="radio-label"><input type="radio" name="desiredOutcome" value="Refund" checked> Direct Refund</label>
+                    <label class="radio-label"><input type="radio" name="desiredOutcome" value="Replacement"> Send Replacement</label>
+                </div>
             </div>
-            <div id="return-subtotal-display" class="order-summary-total" style="display: none; border-top: 1px solid var(--border-color); margin-top:0; padding-top:0.5rem;">
+
+            <div class="form-group" id="return-reason-group" style="display: none;">
+                <label for="return-reason" class="form-label">Reason for return:</label>
+                <textarea id="return-reason" rows="4" required></textarea>
+            </div>
+            
+            <div id="return-subtotal-display" class="order-summary-total" style="display: none;">
                 <span>Refund Subtotal</span><span id="refund-amount">£0.00</span>
             </div>
+
             <div style="text-align: right; margin-top: 1rem;">
                 <button type="submit" id="submit-return-btn" class="btn btn-primary" disabled>
-                    <span class="btn-text">Submit Return Request</span>
-                    <div class="spinner" style="display: none;"></div>
+                    <span class="btn-text">Submit Return Request</span><div class="spinner" style="display: none;"></div>
                 </button>
             </div>
         </form>`;
     
+    const itemsContainer = document.getElementById('order-items-container');
     const oldForm = document.getElementById('direct-return-form');
     if (oldForm) oldForm.remove();
-    const itemsContainer = document.getElementById('order-items-container');
-    itemsContainer.insertAdjacentHTML('afterend', returnFormHtml);
+    if(itemsContainer) itemsContainer.insertAdjacentHTML('afterend', returnFormHtml);
 
     const returnForm = document.getElementById('direct-return-form');
+    if (!returnForm) return; // Exit if form wasn't created
+
     const reasonGroup = document.getElementById('return-reason-group');
+    const outcomeGroup = document.getElementById('return-outcome-group');
     const submitBtn = document.getElementById('submit-return-btn');
     const subtotalDisplay = document.getElementById('return-subtotal-display');
     const refundAmountEl = document.getElementById('refund-amount');
 
-    const validateReturnForm = () => {
+    const calculateTotalAndValidate = () => {
         let refundSubtotal = 0;
         let anyChecked = false;
-        const returnItemControls = returnForm.querySelectorAll('.return-item-control');
-
-        returnItemControls.forEach(control => {
-            const checkbox = control.querySelector('input[name="return-item"]');
-            if (!checkbox) return;
-            const quantitySelector = control.querySelector('.quantity-selector-inline');
-            const productId = checkbox.value;
-            const quantityInput = document.getElementById(`return-qty-${productId}`);
-
-            if (checkbox.checked) {
-                anyChecked = true;
-                quantitySelector.style.display = 'flex';
-                const item = order.items.find(i => i.productId === productId);
-                if (item && quantityInput) {
-                    refundSubtotal += item.price * parseInt(quantityInput.value, 10);
-                }
-            } else {
-                if (quantitySelector) quantitySelector.style.display = 'none';
+        const checkedBoxes = returnForm.querySelectorAll('input[name="return-item"]:checked');
+        
+        checkedBoxes.forEach(checkbox => {
+            anyChecked = true;
+            const control = checkbox.closest('.return-item-control');
+            const price = parseFloat(control.dataset.price);
+            const qtyInput = control.querySelector('.quantity-input-return');
+            const quantity = parseInt(qtyInput.value, 10);
+            if (!isNaN(price) && !isNaN(quantity)) {
+                refundSubtotal += price * quantity;
             }
         });
 
-        reasonGroup.style.display = anyChecked ? 'block' : 'none';
-        subtotalDisplay.style.display = anyChecked ? 'flex' : 'none';
-        if (anyChecked) refundAmountEl.textContent = `£${refundSubtotal.toFixed(2)}`;
-        submitBtn.disabled = !anyChecked;
+        if(reasonGroup) reasonGroup.style.display = anyChecked ? 'block' : 'none';
+        if(outcomeGroup) outcomeGroup.style.display = anyChecked ? 'block' : 'none';
+        if(subtotalDisplay) subtotalDisplay.style.display = anyChecked ? 'block' : 'none';
+        if(submitBtn) submitBtn.disabled = !anyChecked;
+        if(refundAmountEl) refundAmountEl.textContent = `£${refundSubtotal.toFixed(2)}`;
     };
 
-    returnForm.addEventListener('click', (e) => {
-        const target = e.target;
-        if (target.closest('.return-item-control')) {
-            if (target.matches('label')) {
-                const checkbox = document.getElementById(target.getAttribute('for'));
-                if (checkbox) checkbox.checked = !checkbox.checked;
-            }
-            validateReturnForm();
+    returnForm.addEventListener('change', (e) => {
+        if (e.target.matches('input[name="return-item"]')) {
+            const quantitySelector = e.target.closest('.return-item-control').querySelector('.quantity-selector-inline');
+            if (quantitySelector) quantitySelector.style.display = e.target.checked ? 'flex' : 'none';
         }
-        
-        if (target.matches('.decrease-return-qty, .increase-return-qty')) {
-            const productId = target.dataset.productId;
-            const quantityInput = document.getElementById(`return-qty-${productId}`);
-            let val = parseInt(quantityInput.value, 10);
-            const max = parseInt(quantityInput.max, 10);
+        calculateTotalAndValidate();
+    });
 
-            if (target.matches('.decrease-return-qty') && val > 1) quantityInput.value = val - 1;
-            else if (target.matches('.increase-return-qty') && val < max) quantityInput.value = val + 1;
-            
-            validateReturnForm();
+    returnForm.addEventListener('click', (e) => {
+        if (e.target.matches('.quantity-btn')) {
+            const productId = e.target.dataset.productId;
+            const qtyInput = document.getElementById(`return-qty-${productId}`);
+            let val = parseInt(qtyInput.value, 10);
+            const max = parseInt(qtyInput.max, 10);
+            if (e.target.matches('.decrease-return-qty') && val > 1) qtyInput.value = val - 1;
+            else if (e.target.matches('.increase-return-qty') && val < max) qtyInput.value = val + 1;
+            calculateTotalAndValidate();
         }
     });
     
     returnForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        
         const btnText = submitBtn.querySelector('.btn-text');
         const spinner = submitBtn.querySelector('.spinner');
-
         submitBtn.disabled = true;
         btnText.style.display = 'none';
         spinner.style.display = 'block';
         
         const reason = document.getElementById('return-reason').value;
-        const checkedBoxes = returnForm.querySelectorAll('input[name="return-item"]:checked');
-        
-        if (checkedBoxes.length === 0 || reason.trim() === '') {
-            showConfirmationModal('Please select items and provide a reason.');
-            submitBtn.disabled = false;
-            btnText.style.display = 'inline';
-            spinner.style.display = 'none';
-            return;
-        }
-
-        const selectedItems = Array.from(checkedBoxes).map(cb => {
+        const desiredOutcome = returnForm.querySelector('input[name="desiredOutcome"]:checked').value;
+        const selectedItems = Array.from(returnForm.querySelectorAll('input[name="return-item"]:checked')).map(cb => {
             const item = order.items.find(i => i.productId === cb.value);
             const quantity = parseInt(document.getElementById(`return-qty-${cb.value}`).value, 10);
             return { ...item, quantity };
         });
-
         const refundAmount = selectedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-        const returnRequestPayload = { orderId: order.id, reason, items: selectedItems, refundAmount };
+
+        const returnRequestPayload = { orderId: order.id, reason, items: selectedItems, refundAmount, desiredOutcome };
 
         try {
-            await fetchWithAuth('/api/returns', {
-                method: 'POST',
-                body: JSON.stringify({ returnRequest: returnRequestPayload })
-            });
+            await fetchWithAuth('/api/returns', { method: 'POST', body: JSON.stringify({ returnRequest: returnRequestPayload }) });
             await fetchInitialUserData();
             router.navigate('/account/returns');
             showConfirmationModal(`Your return request has been submitted.`);
@@ -2961,6 +3037,9 @@ function showReturnRequestPage(order) {
             spinner.style.display = 'none';
         }
     });
+
+    // This final call sets the correct initial state of the form.
+    calculateTotalAndValidate();
 }
 function renderAndAttachReturnForm(order) {
     // Hide the 'Request a Return' link that was just clicked
@@ -2969,38 +3048,52 @@ function renderAndAttachReturnForm(order) {
 
     // This is the same HTML for the form you had before
     const returnFormHtml = `
-        <form id="direct-return-form" class="detail-card">
-            <h4>Request a Return</h4>
-            <p>Please select the items you wish to return and provide a reason.</p>
-            <div class="form-group">
-            ${order.items.map(item => `
-                <div class="return-item-control">
-                    <div class="form-group-checkbox">
-                        <input type="checkbox" name="return-item" id="return-item-${item.productId}" value="${item.productId}">
-                        <label for="return-item-${item.productId}">${item.title}</label>
-                    </div>
-                    <div class="quantity-selector-inline" style="display: none;">
-                        <button type="button" class="quantity-btn decrease-return-qty" data-product-id="${item.productId}">-</button>
-                        <input type="number" class="quantity-input-return" id="return-qty-${item.productId}" value="1" min="1" max="${item.quantity}" readonly>
-                        <button type="button" class="quantity-btn increase-return-qty" data-product-id="${item.productId}">+</button>
-                    </div>
-                    <p class="return-price">£${item.price.toFixed(2)} ea</p>
+    <form id="direct-return-form" class="detail-card">
+        <h4>Request a Return for Order #${order.id}</h4>
+        <p>Select the items and quantities you wish to return.</p>
+
+        <div class="form-group" id="returnable-items-list">
+        ${order.items.map(item => {
+            const alreadyReturned = returnedQuantities[item.productId] || 0;
+            const returnableQty = item.quantity - alreadyReturned;
+            if (returnableQty <= 0) {
+                return `<div class="return-item-control disabled"><p>✓ <em>${item.title} (Already Returned/Returning)</em></p></div>`;
+            }
+            const checkedAttr = isSingleReturnableItem ? 'checked disabled' : '';
+            return `
+            <div class="return-item-control" data-price="${item.price}">
+                <div class="form-group-checkbox">
+                    <input type="checkbox" name="return-item" id="return-item-${item.productId}" value="${item.productId}" ${checkedAttr}>
+                    <label for="return-item-${item.productId}">${item.title}</label>
                 </div>
-            `).join('')}
+                <div class="quantity-selector-inline" style="${isSingleReturnableItem ? 'display: flex;' : 'display: none;'}">
+                    <button type="button" class="quantity-btn decrease-return-qty" data-product-id="${item.productId}">-</button>
+                    <input type="number" class="quantity-input-return" id="return-qty-${item.productId}" value="1" min="1" max="${returnableQty}">
+                    <button type="button" class="quantity-btn increase-return-qty" data-product-id="${item.productId}">+</button>
+                </div>
+            </div>`;
+        }).join('')}
+        </div>
+
+        <div class="form-group" id="return-outcome-group" style="display: none;">
+            <label class="form-label">What would you like?</label>
+            <div class="radio-group">
+                <label class="radio-label"><input type="radio" name="desiredOutcome" value="Refund" checked> Direct Refund</label>
+                <label class="radio-label"><input type="radio" name="desiredOutcome" value="Replacement"> Send Replacement</label>
             </div>
-            <div class="form-group" id="return-reason-group" style="display: none;">
-                <label for="return-reason">Reason for return:</label>
-                <textarea id="return-reason" rows="10" required></textarea>
-            </div>
-            <div id="return-subtotal-display" class="order-summary-total" style="display: none; border-top: 1px solid var(--border-color); margin-top:0; padding-top:0.5rem;">
-                <span>Refund Subtotal</span><span id="refund-amount">£0.00</span>
-            </div>
-            <div style="text-align: right; margin-top: 1rem;">
-                <button type="submit" id="submit-return-btn" class="btn btn-primary" disabled>
-    <span class="btn-text">Submit Return Request</span>
-    <div class="spinner" style="display: none;"></div>
-</button>
-            </div>
+        </div>
+        <div class="form-group" id="return-reason-group" style="display: none;">
+            <label for="return-reason" class="form-label">Reason for return:</label>
+            <textarea id="return-reason" rows="4" required></textarea>
+        </div>
+        <div id="return-subtotal-display" class="order-summary-total" style="display: none;">
+            <span>Refund Subtotal</span><span id="refund-amount">£0.00</span>
+        </div>
+        <div style="text-align: right; margin-top: 1rem;">
+            <button type="submit" id="submit-return-btn" class="btn btn-primary" disabled>
+                <span class="btn-text">Submit Return Request</span><div class="spinner" style="display: none;"></div>
+            </button>
+        </div>
         </form>`;
     
     // Inject the form into the page
@@ -3103,11 +3196,12 @@ function renderAndAttachReturnForm(order) {
         userReturns.unshift(newReturn);
         showConfirmationModal(`Your return request for £${refundAmount.toFixed(2)} has been submitted.`, () => renderMyReturnsPage(true));
     });
+    calculateTotal();
 }
 
 function renderAccountPage() {
     if (!auth.isLoggedIn()) {
-       router.navigate('/login');
+        router.navigate('/login');
         return;
     }
     const currentUser = auth.getCurrentUser();
@@ -3117,19 +3211,65 @@ function renderAccountPage() {
         return;
     }
     const userName = currentUser.name || 'Valued Customer';
+
+    // This innerHTML combines the original menu with the new voucher section
     pageAccount.innerHTML = `
         <div class="account-container">
             <h2 class="account-title">Welcome, ${userName}!</h2>
-           <div class="account-menu">
-    <a href="/#/account/orders" class="account-menu-item"><i class="fa-solid fa-box-archive"></i> My Orders</a>
-    <a href="/#/account/wishlist" class="account-menu-item"><i class="fa-solid fa-heart"></i> My Wishlist</a>
-    <a href="/#/account/returns" class="account-menu-item"><i class="fa-solid fa-undo"></i> My Returns</a>
-    <a href="/#/account/addresses" class="account-menu-item"><i class="fa-solid fa-map-location-dot"></i> My Addresses</a>
-    <a href="/#/account/settings" class="account-menu-item"><i class="fa-solid fa-cog"></i> Account Settings</a>
-</div>
+            <div class="account-menu">
+                <a href="/#/account/orders" class="account-menu-item"><i class="fa-solid fa-box-archive"></i> My Orders</a>
+                <a href="/#/account/wishlist" class="account-menu-item"><i class="fa-solid fa-heart"></i> My Wishlist</a>
+                <a href="/#/account/returns" class="account-menu-item"><i class="fa-solid fa-undo"></i> My Returns</a>
+                <a href="/#/account/addresses" class="account-menu-item"><i class="fa-solid fa-map-location-dot"></i> My Addresses</a>
+                <a href="/#/account/settings" class="account-menu-item"><i class="fa-solid fa-cog"></i> Account Settings</a>
+            </div>
+
+            
+
             <button id="logout-btn" class="btn btn-secondary btn-full-width">Logout</button>
         </div>`;
+
     showPage('account');
+
+    // The event listener for the new form must also be present
+    document.getElementById('redeem-credit-form').addEventListener('submit', handleRedeemCredit);
+}
+
+async function handleRedeemCredit(e) {
+    e.preventDefault();
+    const input = document.getElementById('redeem-code-input');
+    const messageEl = document.getElementById('redeem-message');
+    const code = input.value.trim();
+
+    if (!code) return;
+
+    try {
+        // Use your existing validation API
+        const response = await fetch(`/api/validate-discount?code=${code}`);
+        const result = await response.json();
+
+        if (!response.ok) throw new Error(result.error);
+
+        if (result.type === 'store_credit' && result.value > 0) {
+            // This is the "virtual product" ID from Firestore
+            const GIFT_CARD_PRODUCT_ID = 'GIFT-CARD';
+            const balance = Math.floor(result.value); // Use whole pounds
+
+            if (balance > 0) {
+                addToCart(GIFT_CARD_PRODUCT_ID, balance);
+                messageEl.className = 'discount-message success';
+                messageEl.textContent = `Success! £${balance}.00 in credit has been added to your basket.`;
+                openCart(); // Show the user their cart
+            } else {
+                 throw new Error('Voucher has insufficient balance.');
+            }
+        } else {
+            throw new Error('This is not a valid store credit voucher.');
+        }
+    } catch (error) {
+        messageEl.className = 'discount-message error';
+        messageEl.textContent = error.message;
+    }
 }
 
 function handleAccountMenuClicks(e) {
@@ -3163,75 +3303,59 @@ function handleAccountMenuClicks(e) {
 // REPLACE this entire function in your app.js file
 
 function renderMyReturnsPage() {
-    // --- DIAGNOSTIC LOG ---
-    // This will show us the exact data in the userReturns array before the page is built.
-    console.log("Rendering 'My Returns' page with this data:", JSON.parse(JSON.stringify(userReturns)));
-    // --------------------
-
     updateReturnStatuses();
-
     let contentHtml = `<div class="page-header"><h2>My Returns</h2><button class="btn btn-secondary" id="returns-back-to-account">Back to Account</button></div>`;
-    
+
     if (userReturns.length === 0) {
-        contentHtml += `
-            <div class="empty-state-container">
-                <p>You have not requested any returns.</p>
-                <button class="btn btn-primary" onclick="renderMyOrdersPage()">View My Orders</button>
-            </div>
-        `;
+        contentHtml += `<div class="empty-state-container"><p>You have not requested any returns.</p><a href="/#/account/orders" class="btn btn-primary">View My Orders</a></div>`;
     } else {
-        contentHtml += `
-            <p class="returns-info-message">If you decide you no longer want to return an item, simply keep it. No action is required from you, and your request will automatically expire.</p>
-            <div class="returns-list">
-            ${userReturns.map(ret => {
-                const itemsListHtml = ret.items.map(item => {
-                    const product = allProducts.find(p => p.id === item.productId);
-                    const imageUrl = product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A';
-                    const displayText = `${item.title} (x${item.quantity})`;
+        contentHtml += `<div class="returns-list">${userReturns.map(ret => {
+            const cancelButtonHtml = ret.status === 'Pending' ? `<button class="btn btn-danger btn-sm cancel-return-btn" data-return-id="${ret.id}">Cancel Request</button>` : '';
 
-                    return `
-                    <li class="returned-item">
-                        <img src="${imageUrl}" alt="${item.title}" class="returned-item-image">
-                        <span>${displayText}</span>
-                    </li>`;
-                }).join('');
-
-                const cancelButtonHtml = ret.status === 'Pending'
-                    ? `<button class="btn btn-danger btn-sm cancel-return-btn" data-return-id="${ret.id}">Cancel Request</button>`
-                    : '';
-
+            // THIS FIXES THE MISSING IMAGE
+            const itemsListHtml = ret.items.map(item => {
+                const product = allProducts.find(p => p.id === item.productId);
+                const imageUrl = product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A';
                 return `
-                <div class="data-card return-card">
-                    <div class="data-card-header">
-                        <div>
-                            <p class="data-card-title">Return #${ret.id}</p>
-                            <p class="data-card-subtitle">Order: #${ret.orderId}</p>
-                        </div>
-                        <div>
-                            <p class="data-card-title">£${ret.refundAmount.toFixed(2)}</p>
-                            <span class="return-status ${ret.status.toLowerCase()}">${ret.status}</span>
-                        </div>
+                <li class="returned-item">
+                    <img src="${imageUrl}" alt="${item.title}" class="returned-item-image">
+                    <span>- ${item.title} (x${item.quantity})</span>
+                </li>`;
+            }).join('');
+
+            return `
+            <div class="data-card return-card">
+                <div class="data-card-header">
+                    <div>
+                        <p class="data-card-title">Return #${ret.id}</p>
+                        <p class="data-card-subtitle">For Order: #${ret.orderId}</p>
                     </div>
-                    <div class="data-card-body">
-                        <div class="return-details-group">
-                            <p class="return-detail-label">Request Date:</p>
-                            <p class="return-detail-value">${new Date(ret.requestDate.seconds * 1000).toLocaleDateString()}</p>
-                        </div>
-                        <div class="return-details-group">
-                            <p class="return-detail-label">Reason:</p>
-                            <p class="return-detail-value">${ret.reason}</p>
-                        </div>
-                        <div class="return-items-list-container">
-                            <p class="return-detail-label">Items Returned:</p>
-                            <ul class="returned-items-list">${itemsListHtml}</ul>
-                        </div>
+                    <div>
+                        <p class="data-card-title">£${(ret.refundAmount || 0).toFixed(2)}</p>
+                        <span class="return-status ${ret.status.toLowerCase()}">${ret.status}</span>
                     </div>
-                    <div class="data-card-actions">
-                        ${cancelButtonHtml}
+                </div>
+                <div class="data-card-body">
+                    <div class="return-details-group">
+                        <p class="return-detail-label">Request Date:</p>
+                        <p class="return-detail-value">${new Date(ret.requestDate).toLocaleDateString()}</p>
                     </div>
-                </div>`;
-            }).join('')}
-        </div>`;
+                    <div class="return-details-group">
+                        <p class="return-detail-label">Desired Outcome:</p>
+                        <p class="return-detail-value">${ret.desiredOutcome || 'N/A'}</p>
+                    </div>
+                    <div class="return-details-group">
+                        <p class="return-detail-label">Reason Provided:</p>
+                        <p class="return-detail-value reason-text">${ret.reason || 'No reason given'}</p>
+                    </div>
+                    <div class="return-items-list-container">
+                        <p class="return-detail-label">Items:</p>
+                        <ul class="returned-items-list">${itemsListHtml}</ul>
+                    </div>
+                </div>
+                <div class="data-card-actions">${cancelButtonHtml}</div>
+            </div>`;
+        }).join('')}</div>`;
     }
     pageMyReturns.innerHTML = contentHtml;
     showPage('my-returns');
@@ -3240,13 +3364,16 @@ function renderMyReturnsPage() {
 // REPLACE this entire function in app.js
 
 function renderMyOrdersPage() {
-    // This function no longer needs to fetch. It just displays the userOrders array
-    // which is now populated on login by fetchInitialUserData.
     let contentHtml = `<div class="page-header"><h2>My Orders</h2><button class="btn btn-secondary" id="orders-back-to-account">Back to Account</button></div>`;
+    
     if (userOrders.length === 0) {
         contentHtml += `<p>You haven't placed any orders yet.</p>`;
     } else {
-        contentHtml += `<div class="order-list">${userOrders.map(order => `
+        contentHtml += `<div class="order-list">${userOrders.map(order => {
+            const status = order.status || 'Pending';
+            const colorClass = getStatusColorClass(status); // Uses the helper function for colors
+            
+            return `
             <div class="data-card">
                 <div class="data-card-header">
                     <div>
@@ -3255,14 +3382,16 @@ function renderMyOrdersPage() {
                     </div>
                     <div>
                         <p class="data-card-title">£${order.totalAmount.toFixed(2)}</p>
-                        <span class="order-status ${order.status.toLowerCase()}">${order.status}</span>
+                        <span class="order-status ${colorClass}">${status}</span>
                     </div>
                 </div>
                 <div class="data-card-actions">
                     <button class="btn btn-primary btn-sm view-order-details" data-order-id="${order.id}">View Details</button>
                 </div>
-            </div>`).join('')}</div>`;
+            </div>`;
+        }).join('')}</div>`;
     }
+    
     pageMyOrders.innerHTML = contentHtml;
     showPage('my-orders');
 }
@@ -3303,100 +3432,128 @@ function receiveReturnItem(returnId) {
     }
 }
 
-// REPLACE this entire function in your public/app.js file
-
+/// In app.js, REPLACE the entire renderOrderDetailPage function
 // In app.js
-function renderOrderDetailPage(orderId) {
+async function renderOrderDetailPage(orderId) {
+    // --- ADD THIS LOG ---
+    console.log(`--- DEBUG (app.js): Attempting to render page for orderId: ${orderId}`);
     const order = userOrders.find(o => o.id === orderId);
+
     if (!order) {
+        console.error(`--- DEBUG (app.js): FAILED to find order ${orderId} in the userOrders array.`);
         renderMyOrdersPage();
         return;
     }
-
-    const trackingLinkHtml = order.trackingNumber && order.courierUrl
-        ? `<p><strong>Tracking:</strong> <a href="${order.courierUrl}${order.trackingNumber}" target="_blank">${order.trackingNumber}</a></p>`
-        : '';
-        
-    let contentHtml = `
-        <div class="page-header"><h2>Order Details</h2><button class="btn btn-secondary" id="back-to-orders">Back to My Orders</button></div>
-        <div class="detail-card">
-            <div class="order-detail-summary">
-                <p><strong>Order ID:</strong> #${order.id}</p>
-                <p><strong>Order Date:</strong> ${new Date(order.orderDate.seconds ? order.orderDate.seconds * 1000 : order.orderDate).toLocaleString()}</p>
-                <p><strong>Status:</strong> <span class="order-status ${order.status.toLowerCase()}">${order.status}</span></p>
-                ${trackingLinkHtml}
-            </div>
-        </div>
-        <div class="detail-card" id="order-items-container"><h3>Items in this Order</h3><div class="order-detail-items">
-            ${order.items.map(item => {
-                const product = allProducts.find(p => p.id === item.productId);
-                const imageUrl = item.isCustom ? 'assets/images/custom_hamper_placeholder.jpg' : (product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A');
-                const componentsHtml = (item.isCustom && item.contents)
-                    ? `<ul class="order-detail-components">${item.contents.map(c => `<li>- ${c.name} (x${c.quantity})</li>`).join('')}</ul>`
-                    : '';
-                return `
-                    <div class="order-summary-item">
-                        <img src="${imageUrl}" alt="${item.title}" class="cart-item-image">
-                        <div class="cart-item-info">
-                            <p class="cart-item-title">${item.title}</p>
-                            <p>Qty: ${item.quantity}</p>
-                            ${componentsHtml}
-                        </div>
-                        <span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span>
-                    </div>`;
-            }).join('')}
-        </div></div>
-        <div class="order-summary detail-card">
-            <div class="order-summary-item"><span>Items Subtotal</span><span>£${order.itemsSubtotal.toFixed(2)}</span></div>
-            <div class="order-summary-item"><span>Delivery</span><span>£${order.deliveryChargeApplied.toFixed(2)}</span></div>
-            <div class="order-summary-total"><span>Total</span><span>£${order.totalAmount.toFixed(2)}</span></div>
-        </div>
-    `;
     
-    const returnWindow = appConfig?.returns?.returnWindowInDays ?? 28;
+    // --- ADD THIS LOG ---
+    console.log(`--- DEBUG (app.js): Found order object to render. Status is: ${order.status}`);
 
-    // --- THIS IS THE FIX ---
-    // We now correctly convert the Firestore Timestamp to a JavaScript Date.
-    const orderDate = order.orderDate.seconds ? new Date(order.orderDate.seconds * 1000) : new Date(order.orderDate);
-    const daysSinceOrder = (new Date() - orderDate) / (1000 * 3600 * 24);
-
-    const hasReturnableItems = order.items.some(orderItem => {
-        const returnedQty = userReturns
-            .filter(r => r.orderId === order.id)
-            .flatMap(r => r.items)
-            .filter(item => item.productId === orderItem.productId)
-            .reduce((sum, item) => sum + item.quantity, 0);
-        return returnedQty < orderItem.quantity;
-    });
-
-    if (daysSinceOrder <= returnWindow && hasReturnableItems) {
-        contentHtml += `
-            <div id="return-trigger-container" class="detail-card" style="padding: 1rem 1.5rem;">
-                <div style="text-align: right;">
-                    <a href="#" id="show-return-form-btn" class="btn-link">Need to return an item?</a>
-                </div>
-            </div>`;
-    } else if (daysSinceOrder > returnWindow) {
-        contentHtml += `
-            <div class="return-ineligible-note detail-card">
-                <h4>Return Window Closed</h4>
-                <p>This order was placed more than ${returnWindow} days ago and is no longer eligible for return.</p>
-            </div>`;
-    }
-
+    // (The rest of your renderOrderDetailPage function is the same as the correct version from before)
+    // ...
+    const trackingLinkHtml = order.trackingNumber && order.courierUrl ? `<p><strong>Tracking:</strong> <a href="${order.courierUrl}${order.trackingNumber}" target="_blank">${order.trackingNumber}</a></p>` : '';
+    const initialItemsHtml = order.items.map(item => { const product = allProducts.find(p => p.id === item.productId); const imageUrl = item.isCustom ? 'assets/images/custom_hamper_placeholder.jpg' : (product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A'); const componentsHtml = (item.isCustom && item.contents) ? `<ul class="order-detail-components">${item.contents.map(c => `<li>- ${c.name} (x${c.quantity})</li>`).join('')}</ul>` : ''; return `<div class="order-summary-item"><img src="${imageUrl}" alt="${item.title}" class="cart-item-image"><div class="cart-item-info"><p class="cart-item-title">${item.title}</p><p>Qty: ${item.quantity}</p>${componentsHtml}</div><span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span></div>`; }).join('');
+    const contentHtml = `<div class="page-header"><h2>Order Details</h2><button class="btn btn-secondary" id="back-to-orders">Back to My Orders</button></div><div class="detail-card"><div class="order-detail-summary"><p><strong>Order ID:</strong> #${order.id}</p><p><strong>Order Date:</strong> ${new Date(order.orderDate).toLocaleString()}</p><p><strong>Status:</strong> <span class="order-status status-${(order.status || 'Pending').toLowerCase().split(' ')[0]}">${order.status || 'Pending'}</span></p>${trackingLinkHtml}</div></div><div class="detail-card" id="order-items-container"><h3>Items in this Order</h3><div class="order-detail-items">${initialItemsHtml}</div></div><div class="order-summary detail-card"><div class="order-summary-item"><span>Items Subtotal</span><span>£${order.itemsSubtotal.toFixed(2)}</span></div><div class="order-summary-item"><span>Delivery</span><span>£${order.deliveryChargeApplied.toFixed(2)}</span></div><div class="order-summary-total"><span>Total</span><span>£${order.totalAmount.toFixed(2)}</span></div></div><div class="detail-card" id="order-actions-container"></div>`;
     pageOrderDetail.innerHTML = contentHtml;
     showPage('order-detail');
-
-    const showReturnBtn = document.getElementById('show-return-form-btn');
-    if (showReturnBtn) {
-        showReturnBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            showReturnRequestPage(order);
-        }, { once: true });
-    }
+    const actionsContainer = document.getElementById('order-actions-container');
+    if (!actionsContainer) return;
+    const isCancellable = !['Shipped', 'Dispatched', 'Cancelled', 'Partially Cancelled'].includes(order.status) && order.items.length > 0;
+    if (isCancellable) { const cancelLink = document.createElement('a'); cancelLink.href = '#'; cancelLink.id = 'show-cancel-form-btn'; cancelLink.className = 'btn-link'; cancelLink.textContent = 'Need to cancel an item?'; actionsContainer.appendChild(cancelLink); cancelLink.addEventListener('click', (e) => { e.preventDefault(); cancelLink.style.display = 'none'; activateCancellationMode(order); }, { once: true }); }
+    const returnWindow = appConfig?.returns?.returnWindowInDays ?? 28;
+    const orderDate = new Date(order.orderDate);
+    const daysSinceOrder = (new Date() - orderDate) / (1000 * 3600 * 24);
+    const hasReturnableItems = order.items.some(orderItem => { const returnedQty = userReturns.filter(r => r.orderId === order.id && r.status !== 'Cancelled' && r.status !== 'Rejected').flatMap(r => r.items).filter(item => item.productId === orderItem.productId).reduce((sum, item) => sum + item.quantity, 0); return returnedQty < orderItem.quantity; });
+    if (order.status !== 'Cancelled' && daysSinceOrder <= returnWindow && hasReturnableItems) { const returnLink = document.createElement('a'); returnLink.href = '#'; returnLink.id = 'show-return-form-btn'; returnLink.className = 'btn-link'; returnLink.textContent = 'Need to return an item?'; actionsContainer.appendChild(returnLink); returnLink.addEventListener('click', (e) => { e.preventDefault(); returnLink.style.display = 'none'; showReturnRequestPage(order); }, { once: true }); }
 }
 
+function activateCancellationMode(order) {
+    const itemsContainer = document.querySelector('#page-order-detail .order-detail-items');
+    if (!itemsContainer) return;
+    const itemsWithCheckboxesHtml = order.items.map(item => {
+        const product = allProducts.find(p => p.id === item.productId);
+        const imageUrl = item.isCustom ? 'assets/images/custom_hamper_placeholder.jpg' : (product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A');
+        const checkboxHtml = order.items.length > 1 ? `<div class="cancellation-control"><input type="checkbox" name="cancel-item" value="${item.productId}" data-quantity="${item.quantity}"></div>` : '';
+        return `<div class="order-summary-item">${checkboxHtml}<img src="${imageUrl}" alt="${item.title}" class="cart-item-image"><div class="cart-item-info"><p class="cart-item-title">${item.title}</p><p>Qty: ${item.quantity}</p></div><span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span></div>`;
+    }).join('');
+    itemsContainer.innerHTML = `<form id="cancel-order-form"><p class="cancellation-prompt">Select items below to request a cancellation.</p>${itemsWithCheckboxesHtml}<div class="cancellation-actions"><button type="submit" id="cancel-selected-btn" class="btn btn-primary btn-sm">Cancel Selected Items</button><button type="button" id="cancel-full-order-btn" class="btn btn-danger btn-sm">Cancel Entire Order</button></div></form>`;
+    const cancelSelectedBtn = document.getElementById('cancel-selected-btn');
+    const cancelFullOrderBtn = document.getElementById('cancel-full-order-btn');
+    const returnLink = document.getElementById('show-return-form-btn');
+    const allCheckboxes = itemsContainer.querySelectorAll('input[name="cancel-item"]');
+    if (order.items.length === 1) { if (cancelSelectedBtn) cancelSelectedBtn.style.display = 'none'; }
+    const handleReturnLinkVisibility = () => { if (!returnLink) return; const allChecked = Array.from(allCheckboxes).every(cb => cb.checked); returnLink.style.display = allChecked ? 'none' : ''; };
+    allCheckboxes.forEach(checkbox => checkbox.addEventListener('input', handleReturnLinkVisibility));
+    if (cancelFullOrderBtn) { cancelFullOrderBtn.addEventListener('click', () => { if (returnLink) returnLink.style.display = 'none'; handleOrderCancellation(order.id, 'full'); }); }
+    document.getElementById('cancel-order-form').addEventListener('submit', (e) => { e.preventDefault(); handleOrderCancellation(order.id, 'partial'); });
+}
+
+// In app.js, REPLACE the activateCancellationMode helper function
+
+// In app.js, REPLACE the activateCancellationMode helper function
+
+function activateCancellationMode(order) {
+    const itemsContainer = document.querySelector('#page-order-detail .order-detail-items');
+    if (!itemsContainer) return;
+
+    const itemsWithCheckboxesHtml = order.items.map(item => {
+        const product = allProducts.find(p => p.id === item.productId);
+        const imageUrl = item.isCustom ? 'assets/images/custom_hamper_placeholder.jpg' : (product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A');
+        
+        // --- RULE 1 IS IMPLEMENTED HERE ---
+        // The checkbox is now only created if there is more than one item in the order.
+        const checkboxHtml = order.items.length > 1
+            ? `<div class="cancellation-control"><input type="checkbox" name="cancel-item" value="${item.productId}" data-quantity="${item.quantity}"></div>`
+            : '';
+
+        return `
+            <div class="order-summary-item">
+                ${checkboxHtml}
+                <img src="${imageUrl}" alt="${item.title}" class="cart-item-image">
+                <div class="cart-item-info"><p class="cart-item-title">${item.title}</p><p>Qty: ${item.quantity}</p></div>
+                <span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span>
+            </div>`;
+    }).join('');
+
+    itemsContainer.innerHTML = `
+        <form id="cancel-order-form">
+            <p class="cancellation-prompt">Select items below to request a cancellation.</p>
+            ${itemsWithCheckboxesHtml}
+            <div class="cancellation-actions">
+                <button type="submit" id="cancel-selected-btn" class="btn btn-primary btn-sm">Cancel Selected Items</button>
+                <button type="button" id="cancel-full-order-btn" class="btn btn-danger btn-sm">Cancel Entire Order</button>
+            </div>
+        </form>
+    `;
+
+    const cancelSelectedBtn = document.getElementById('cancel-selected-btn');
+    const cancelFullOrderBtn = document.getElementById('cancel-full-order-btn');
+    const returnLink = document.getElementById('show-return-form-btn');
+    const allCheckboxes = itemsContainer.querySelectorAll('input[name="cancel-item"]');
+
+    if (order.items.length === 1) {
+        if(cancelSelectedBtn) cancelSelectedBtn.style.display = 'none';
+    }
+
+    const handleReturnLinkVisibility = () => {
+        if (!returnLink) return;
+        const allChecked = Array.from(allCheckboxes).every(cb => cb.checked);
+        returnLink.style.display = allChecked ? 'none' : '';
+    };
+
+    allCheckboxes.forEach(checkbox => checkbox.addEventListener('input', handleReturnLinkVisibility));
+    
+    if(cancelFullOrderBtn) {
+        cancelFullOrderBtn.addEventListener('click', () => {
+             if(returnLink) returnLink.style.display = 'none';
+             handleOrderCancellation(order.id, 'full');
+        });
+    }
+
+    document.getElementById('cancel-order-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        handleOrderCancellation(order.id, 'partial');
+    });
+}
 function renderMyAddressesPage() {
     let contentHtml = `<div class="page-header"><h2>My Addresses</h2><button class="btn btn-secondary" id="addresses-back-to-account">Back to Account</button></div>`;
     contentHtml += `<div class="page-actions"><button class="btn btn-primary" id="add-new-address-main">Add New Address</button></div>`;
@@ -3673,6 +3830,21 @@ async function handleUpdateAccount(e) {
         showConfirmationModal(successMessages.join('\n'));
     } else {
         showConfirmationModal("No changes were made.");
+    }
+}function getStatusColorClass(status) {
+    const lowerCaseStatus = (status || 'pending').toLowerCase();
+    switch (lowerCaseStatus) {
+        case 'pending':
+            return 'status-yellow'; // Dedicated class for yellow
+        case 'cancelled':
+        case 'partially cancelled':
+            return 'status-grey';   // Dedicated class for grey
+        case 'shipped':
+        case 'dispatched':
+        case 'returned':
+            return 'status-green';  // Dedicated class for green
+        default:
+            return 'status-default'; // A fallback class
     }
 }
 // --------------------------------------------------------------------- //
