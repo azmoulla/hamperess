@@ -1,0 +1,26 @@
+[
+  {
+    "id": "di_uk",
+    "title": "UK Delivery Options",
+    "iconName": "truckFast",
+    "content": "Standard UK Delivery\nTime: Typically 3-5 working days.\nCost: £4.95 (FREE on orders over £50)\nDetails: Deliveries are made Monday to Saturday.\n\nExpress UK Delivery\nTime: Typically 1-2 working days (order before 1 PM).\nCost: £6.99\nDetails: Available for most mainland UK addresses. Excludes weekends & bank holidays."
+  },
+  {
+    "id": "di_intl",
+    "title": "International Delivery",
+    "iconName": "globeEurope",
+    "content": "We are happy to offer international delivery to selected countries. Shipping costs and times vary depending on the destination and will be calculated at checkout. Please note that some items may be restricted due to customs regulations in the destination country. For more information, please contact our customer service team."
+  },
+  {
+    "id": "di_tracking",
+    "title": "Order Tracking",
+    "iconName": "magnifyingGlassLocation",
+    "content": "Once your order has been dispatched, you will receive an email confirmation containing your tracking number and a link to the courier's website. You can use this to monitor the progress of your delivery.\n\nIf you have any questions about your order status, please don't hesitate to get in touch with us."
+  },
+  {
+    "id": "di_notes",
+    "title": "Delivery Notes",
+    "iconName": "clipboardList",
+    "content": "• Please ensure someone is available at the delivery address to receive the order, especially for perishable items.\n• We cannot be held responsible for delays caused by incorrect address information provided by the customer.\n• During peak seasons (e.g., Christmas, Easter), delivery times may be slightly longer. We advise ordering in advance."
+  }
+]
