@@ -14,7 +14,7 @@ import './input.css';
 // -------------------- KIT: CORE SETUP & STATE -------------------- //
 // ------------------------------------------------------------------ //
 // TEST - IF THIS COMMENT DISAPPEARS, THE FILE IS BEING OVERWRITTEN.
-const searchClient = algoliasearch(ALGOLIA_APP_ID, ALGOLIA_SEARCH_KEY);
+const searchClient = algoliasearch(window.ALGOLIA_APP_ID, window.ALGOLIA_SEARCH_KEY);
 const searchIndex = searchClient.initIndex('products');
 //import siteSettingsHandler from './api/admin/site_settings.js';
 // --- PWA SERVICE WORKER REGISTRATION ---
@@ -5560,6 +5560,7 @@ async function fetchOccasions() {
         console.error("fetchOccasions: Failed to fetch occasions from /api/admin/occasions.");
     }
 }
+
 
 
 
