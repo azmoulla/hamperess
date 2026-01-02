@@ -1,12 +1,13 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
-    "./index.html",            // Scans index.html in Root
-    "./app.js",                // Scans app.js in Root
-    "./public/**/*.{html,js}"  // Scans any leftovers in public
-  ],
+  "./public/index.html",   // Look inside public
+  "./public/app.js",       // Look inside public
+  "./public/**/*.html"     // Look at everything else in public
+],
   theme: {
     extend: {},
   },
   plugins: [],
+
 }
