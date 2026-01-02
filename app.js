@@ -1310,11 +1310,7 @@ async function fetchProducts() {
     }
 }
 
-async function fetchOccasions() {
-    console.log("fetchOccasions: Fetching occasions data.");
-    const occasions = await fetchData('data/occasions.json');
-    if (occasions) displayOccasions(occasions);
-}
+
 
 async function fetchMenu() {
    console.log("fetchMenu: Fetching menu data from API.");
@@ -5564,5 +5560,6 @@ async function fetchOccasions() {
         console.error("fetchOccasions: Failed to fetch occasions from /api/admin/occasions.");
     }
 }
+
 
 
