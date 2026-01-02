@@ -9,7 +9,7 @@ const auth = (() => {
     // Initialize Firebase
     console.log('--- DEFINITIVE TEST: firebaseConfig object ---');
     console.log(firebaseConfig);
-    firebase.initializeApp(firebaseConfig);
+    firebase.initializeApp(window.firebaseConfig);
     const fbAuth = firebase.auth();
     const db = firebase.firestore();
 
@@ -266,4 +266,5 @@ async register(name, email, password) {
             }
         }
     };
+
 })();
