@@ -1385,11 +1385,7 @@ async function fetchFeatures() {
     }
 }
 
-async function fetchTestimonials() {
-    console.log("fetchTestimonials: Fetching testimonials data.");
-    const testimonials = await fetchData('data/testimonials.json');
-    if (testimonials) displayTestimonials(testimonials);
-}
+
 
 // ---------------------------------------------------------------- //
 // -------------------- KIT: FOOTER ------------------------------- //
@@ -5568,4 +5564,5 @@ async function fetchOccasions() {
         console.error("fetchOccasions: Failed to fetch occasions from /api/admin/occasions.");
     }
 }
+
 
