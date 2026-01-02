@@ -4,7 +4,7 @@
   "type": "module",
   "main": "app.js",
  "scripts": {
-    "build": "tailwindcss -i ./public/input.css -o ./public/style.css", 
+    "build": "tailwindcss -i ./public/input.css -o ./style.css", 
     "watch": "tailwindcss -i ./public/input.css -o ./public/style.css --watch",
     "index-products": "node scripts/index-to-algolia.js",
     "test": "echo \"Error: no test specified\" && exit 1"
