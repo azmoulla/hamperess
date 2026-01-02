@@ -4682,30 +4682,7 @@ async function renderOrderDetailPage(orderId) {
     }
 }
 
-function activateCancellationMode(order) {
-    const itemsContainer = document.querySelector('#page-order-detail .order-detail-items');
-    if (!itemsContainer) return;
-    const itemsWithCheckboxesHtml = order.items.map(item => {
-        const product = allProducts.find(p => p.id === item.productId);
-        const imageUrl = item.isCustom ? 'assets/images/custom_hamper_placeholder.jpg' : (product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A');
-        const checkboxHtml = order.items.length > 1 ? `<div class="cancellation-control"><input type="checkbox" name="cancel-item" value="${item.productId}" data-quantity="${item.quantity}"></div>` : '';
-        return `<div class="order-summary-item">${checkboxHtml}<img src="${imageUrl}" alt="${item.title}" class="cart-item-image"><div class="cart-item-info"><p class="cart-item-title">${item.title}</p><p>Qty: ${item.quantity}</p></div><span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span></div>`;
-    }).join('');
-    itemsContainer.innerHTML = `<form id="cancel-order-form"><p class="cancellation-prompt">Select items below to request a cancellation.</p>${itemsWithCheckboxesHtml}<div class="cancellation-actions"><button type="submit" id="cancel-selected-btn" class="btn btn-primary btn-sm">Cancel Selected Items</button><button type="button" id="cancel-full-order-btn" class="btn btn-danger btn-sm">Cancel Entire Order</button></div></form>`;
-    const cancelSelectedBtn = document.getElementById('cancel-selected-btn');
-    const cancelFullOrderBtn = document.getElementById('cancel-full-order-btn');
-    const returnLink = document.getElementById('show-return-form-btn');
-    const allCheckboxes = itemsContainer.querySelectorAll('input[name="cancel-item"]');
-    if (order.items.length === 1) { if (cancelSelectedBtn) cancelSelectedBtn.style.display = 'none'; }
-    const handleReturnLinkVisibility = () => { if (!returnLink) return; const allChecked = Array.from(allCheckboxes).every(cb => cb.checked); returnLink.style.display = allChecked ? 'none' : ''; };
-    allCheckboxes.forEach(checkbox => checkbox.addEventListener('input', handleReturnLinkVisibility));
-    if (cancelFullOrderBtn) { cancelFullOrderBtn.addEventListener('click', () => { if (returnLink) returnLink.style.display = 'none'; handleOrderCancellation(order.id, 'full'); }); }
-    document.getElementById('cancel-order-form').addEventListener('submit', (e) => { e.preventDefault(); handleOrderCancellation(order.id, 'partial'); });
-}
 
-// In app.js, REPLACE the activateCancellationMode helper function
-
-// In app.js, REPLACE the activateCancellationMode helper function
 
 function activateCancellationMode(order) {
     const itemsContainer = document.querySelector('#page-order-detail .order-detail-items');
@@ -5591,3 +5568,4 @@ async function fetchOccasions() {
         console.error("fetchOccasions: Failed to fetch occasions from /api/admin/occasions.");
     }
 }
+
