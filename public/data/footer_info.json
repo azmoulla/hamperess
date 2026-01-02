@@ -40,10 +40,10 @@
   "weAccept": {
     "title": "We Accept",
     "imageUrls": [
-      "assets/images/payment_visa.png",
-      "assets/images/payment_mastercard.png",
-      "assets/images/payment_paypal.png",
-      "assets/images/payment_amex.png"
+      "https://res.cloudinary.com/duuaamgun/image/upload/v1760645838/payment_visa_v0nqwa.png",
+      "https://res.cloudinary.com/duuaamgun/image/upload/v1760645760/payment_mastercard_rhh4ng.png",
+      "https://res.cloudinary.com/duuaamgun/image/upload/v1760645747/payment_paypal_iezoc1.png",
+      "https://res.cloudinary.com/duuaamgun/image/upload/v1760645756/payment_amex_xb2b1o.png"
     ]
   }
 }

@@ -1,104 +1,113 @@
-// FILE: api/create-order.js (Final Production Version)
-const admin = require('firebase-admin');
-const { sendOrderConfirmation } = require('./_lib/brevo-helper.js');
-
-if (!admin.apps.length) {
-  try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
-  } catch (error) {
-    console.error('Firebase admin initialization error:', error.stack);
-  }
-}
-
-const db = admin.firestore();
-const auth = admin.auth();
-
-function generateOrderId() {
-    const now = new Date();
-    const datePart = now.toISOString().slice(2, 10).replace(/-/g, ""); 
-    const randomPart = Math.random().toString(36).substring(2, 7).toUpperCase();
-    return `ORD-${datePart}-${randomPart}`;
-}
+// FILE: /api/create-order.js (FINAL, CORRECTED VERSION)
+import admin from 'firebase-admin';
+import { db } from './_lib/firebase-admin-helper.js';
 
 async function getVerifiedUid(req) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
     const idToken = authHeader.split('Bearer ')[1];
     try {
-        const decodedToken = await auth.verifyIdToken(idToken);
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
         return decodedToken.uid;
     } catch (error) {
-        console.error("Error verifying auth token:", error);
+        console.error('Error verifying auth token in create-order:', error);
         return null;
     }
 }
 
-module.exports = async function handler(req, res) {
-    let newOrderRefId = null;
+export default async function handler(req, res) {
+    if (req.method !== 'POST') return res.status(405).end();
+    
+    const uid = await getVerifiedUid(req);
+    if (!uid) return res.status(401).json({ error: 'Unauthorized.' });
+
     try {
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-        if (req.method === 'OPTIONS') return res.status(200).end();
-        if (req.method !== 'POST') return res.status(405).end('Method Not Allowed');
-
-        const uid = await getVerifiedUid(req);
-        if (!uid) return res.status(401).json({ error: 'Unauthorized' });
-
-        const { orderPayload } = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+        const { orderPayload } = req.body;
         if (!orderPayload || !orderPayload.items || orderPayload.items.length === 0) {
-            return res.status(400).json({ error: 'Invalid order data.' });
+            return res.status(400).json({ error: 'Order payload with items is required.' });
         }
 
-        const productRefs = orderPayload.items
-            .filter(item => !item.isCustom)
-            .map(item => db.collection('products').doc(item.productId));
-        
-        let finalOrderObjectForEmail; 
+        const newOrderRef = db.collection('orders').doc();
+        const orderId = `ORD-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${newOrderRef.id.slice(0, 5).toUpperCase()}`;
 
-        const newOrderRef = await db.runTransaction(async (transaction) => {
-            if (productRefs.length > 0) {
-                const stockIssues = [];
-                const productDocs = await transaction.getAll(...productRefs);
-                for (const doc of productDocs) {
-                    if (!doc.exists) throw new Error(`Product is no longer available.`);
-                    const productData = doc.data();
-                    const cartItem = orderPayload.items.find(item => item.productId === doc.id);
-                    if (productData.stock < cartItem.quantity) {
-                        stockIssues.push(`${cartItem.title} (Available: ${productData.stock || 0})`);
-                    }
+        await db.runTransaction(async (transaction) => {
+            // --- 1. READ PHASE (ALL READS MUST HAPPEN FIRST) ---
+            const standardItems = orderPayload.items.filter(item => !item.isCustom);
+            const productRefs = standardItems.map(item => db.collection('products').doc(item.productId));
+            const productDocs = productRefs.length > 0 ? await transaction.getAll(...productRefs) : [];
+            
+            // --- THIS IS THE FIX: Read the credit document inside the transaction ---
+            let creditDoc = null;
+            if (orderPayload.appliedDiscount?.type === 'store_credit' && orderPayload.appliedDiscount.id) {
+                const creditDocRef = db.collection('storeCredits').doc(orderPayload.appliedDiscount.id);
+                creditDoc = await transaction.get(creditDocRef);
+                if (!creditDoc.exists) {
+                    throw new Error('Store credit voucher not found or has been deleted.');
                 }
-                if (stockIssues.length > 0) throw new Error(`Out of stock: ${stockIssues.join(', ')}`);
-                for (const doc of productDocs) {
-                    const cartItem = orderPayload.items.find(item => item.productId === doc.id);
-                    const newStock = admin.firestore.FieldValue.increment(-cartItem.quantity);
-                    transaction.update(doc.ref, { stock: newStock });
+            }
+            // --- END OF FIX ---
+
+            // --- 2. VALIDATION & CALCULATION PHASE ---
+            const itemsWithPrice = orderPayload.items.filter(item => item.isCustom);
+            for (let i = 0; i < productDocs.length; i++) {
+                const productDoc = productDocs[i];
+                if (!productDoc.exists) throw new Error(`Product ID ${standardItems[i].productId} not found.`);
+                const productData = productDoc.data();
+                if (productData.stock < standardItems[i].quantity) throw new Error(`Not enough stock for ${productData.title}.`);
+                itemsWithPrice.push({ ...standardItems[i], price: productData.price });
+            }
+
+            const itemsSubtotal = itemsWithPrice.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            const deliveryChargeApplied = itemsSubtotal > 0 && itemsSubtotal < 50 ? 4.99 : 0;
+            const chargeableTotal = itemsSubtotal + deliveryChargeApplied;
+            let discountApplied = 0;
+            
+            if (creditDoc) { // If we successfully read a credit document
+                const creditData = creditDoc.data();
+                if (creditData.isActive && creditData.remainingValue > 0) {
+                    discountApplied = Math.min(chargeableTotal, creditData.remainingValue);
+                }
+            } else if (orderPayload.appliedDiscount) { // Handle other discount types
+                const discount = orderPayload.appliedDiscount;
+                if (discount.type === 'percent') {
+                    discountApplied = (itemsSubtotal * discount.value) / 100;
+                } else if (discount.type === 'fixed') {
+                    discountApplied = discount.value;
                 }
             }
             
-            const newOrderId = generateOrderId();
-            const newDocRef = db.collection('orders').doc(newOrderId);
-            finalOrderObjectForEmail = { id: newOrderId, ...orderPayload, userId: uid, orderDate: new Date(), status: 'Pending' };
-            const firestoreOrder = { ...finalOrderObjectForEmail, orderDate: admin.firestore.FieldValue.serverTimestamp() };
-            transaction.set(newDocRef, firestoreOrder);
-            return newDocRef;
+            discountApplied = Math.min(chargeableTotal, discountApplied);
+            const totalAmount = chargeableTotal - discountApplied;
+            
+            // --- 3. WRITE PHASE (ALL WRITES HAPPEN LAST) ---
+            for (let i = 0; i < productRefs.length; i++) {
+                transaction.update(productRefs[i], { stock: admin.firestore.FieldValue.increment(-standardItems[i].quantity) });
+            }
+
+            if (creditDoc) {
+                const creditData = creditDoc.data();
+                const newRemainingValue = creditData.remainingValue - discountApplied;
+                const newUsageRecord = { orderId: orderId, amountUsed: discountApplied, date: new Date() };
+                transaction.update(creditDoc.ref, {
+                    remainingValue: newRemainingValue,
+                    isActive: newRemainingValue > 0,
+                    usageHistory: admin.firestore.FieldValue.arrayUnion(newUsageRecord)
+                });
+            }
+
+            const finalOrderPayload = {
+                ...orderPayload, id: orderId, itemsSubtotal, deliveryChargeApplied,
+                discountApplied, totalAmount, status: 'Pending',
+                orderDate: admin.firestore.FieldValue.serverTimestamp(),
+                items: itemsWithPrice
+            };
+            transaction.set(newOrderRef, finalOrderPayload);
         });
 
-        newOrderRefId = newOrderRef.id;
-
-        if (finalOrderObjectForEmail) {
-            console.log(`Order ${newOrderRefId} saved. Attempting to send email...`);
-            await sendOrderConfirmation(finalOrderObjectForEmail);
-        }
-
-        console.log(`Order ${newOrderRefId} processed successfully. Sending 201 response.`);
-        res.status(201).json({ success: true, orderId: newOrderRefId });
+        res.status(200).json({ success: true, orderId: orderId });
 
     } catch (error) {
-        console.error(`[FATAL] Error processing order ${newOrderRefId || ''}:`, error.message);
-        res.status(500).json({ error: `An unexpected server error occurred. Please contact support.` });
+        console.error('Error creating order:', error);
+        res.status(500).json({ error: 'An unexpected server error occurred.', details: error.message });
     }
 }

@@ -9,21 +9,26 @@ const urlsToCache = [
     '/style.css',
     '/app.js',
     '/auth.js',
+    '/wishlist.js',
+    '/firebase-config.js',
     '/manifest.json',
-    '/data/occasions.json',
-    '/data/Header_nav.json',
-    '/data/footer_info.json',
-    '/data/pages/about_us.json',
-    '/data/pages/contact_us.json',
-    '/data/pages/delivery_info.json',
-    '/data/pages/faqs.json',
-    '/data/pages/our_mission.json',
-    '/data/pages/privacy_policy.json',
-    '/data/pages/terms_and_conditions.json',
+    
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
     '/assets/images/hero_main_banner.jpg',
     '/assets/images/occasion_birthday.jpg',
     '/assets/images/occasion_anniversary.jpg',
+    '/api/get-menu',
+    '/api/admin/footer_info',
+    '/api/admin/site_settings',
+    '/api/products',
+    '/api/custom-hamper-components',
+    '/api/public/page?slug=about-us',
+    '/api/public/page?slug=contact-us',
+    '/api/public/page?slug=faqs',
+    '/api/public/page?slug=delivery-info',
+    '/api/public/page?slug=privacy-policy',
+    '/api/public/page?slug=terms-and-conditions',
+    '/api/public/page?slug=our-mission',
 ];
 
 // --- LIFECYCLE FIX 1: IMMEDIATE ACTIVATION ---
@@ -41,37 +46,34 @@ self.addEventListener('install', event => {
 
 // --- CACHING STRATEGY FIX ---
 // REPLACE the existing 'fetch' event listener with this entire block.
+// REPLACE your 'fetch' event listener with this entire block
+
 self.addEventListener('fetch', event => {
-    // --- THIS IS THE FIX ---
-    // Only apply caching strategies to GET requests. Ignore all others (POST, etc.)
-    if (event.request.method !== 'GET') {
-        return;
-    }
+  // We only want to cache GET requests.
+  if (event.request.method !== 'GET') {
+    return;
+  }
 
-    // For API calls, use a "Network-First" strategy.
-    if (event.request.url.includes('/api/')) {
-        event.respondWith(
-            fetch(event.request).catch(() => {
-                return caches.match(event.request);
-            })
-        );
-        return;
-    }
+  event.respondWith(
+    caches.match(event.request)
+      .then(cachedResponse => {
+        // STRATEGY: Cache-first, then network, with offline fallback.
+        
+        // If a cached response is found, return it immediately.
+        if (cachedResponse) {
+          return cachedResponse;
+        }
 
-    // For all other GET requests (static assets), use the "Cache-First" strategy.
-    event.respondWith(
-        caches.match(event.request)
-            .then(response => {
-                return response || fetch(event.request).then(networkResponse => {
-                    return caches.open(CACHE_NAME).then(cache => {
-                        if (!event.request.url.startsWith('chrome-extension://')) {
-                            cache.put(event.request, networkResponse.clone());
-                        }
-                        return networkResponse;
-                    });
-                });
-            })
-    );
+        // If not in cache, fetch it from the network.
+        return fetch(event.request).catch(() => {
+          // THIS IS THE FIX:
+          // If the network fetch fails (user is offline),
+          // return a fallback page from the cache.
+          // This ensures the browser always gets a valid response.
+          return caches.match('/index.html'); 
+        });
+      })
+  );
 });
 
 // --- LIFECYCLE FIX 2: TAKE CONTROL ---

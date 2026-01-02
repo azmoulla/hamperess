@@ -1,10 +1,10 @@
-// FILE: api/_lib/brevo-helper.js (Final Version with @getbrevo/brevo)
-const Brevo = require('@getbrevo/brevo');
+// FILE: api/_lib/brevo-helper.js
+import Brevo from '@getbrevo/brevo';
 
-const SENDER_EMAIL = 'Az.moulla@gmail.com';
+const SENDER_EMAIL = 'a.moulla@btinternet.com';
 const SENDER_NAME = 'Luxury Hampers';
 
-async function sendOrderConfirmation(order) {
+export async function sendOrderConfirmation(order) { // Changed to export
     console.log(`[brevo-helper] Preparing to send email for order ${order.id}...`);
     const brevoApiKey = process.env.BREVO_API_KEY;
 
@@ -12,7 +12,7 @@ async function sendOrderConfirmation(order) {
         console.error('[brevo-helper] CRITICAL: BREVO_API_KEY is missing. Email cannot be sent.');
         return;
     }
-
+    // ... rest of the function remains identical ...
     try {
         const defaultClient = Brevo.ApiClient.instance;
         const apiKey = defaultClient.authentications['api-key'];
@@ -49,5 +49,3 @@ async function sendOrderConfirmation(order) {
         throw new Error('Failed to send transactional email via Brevo.');
     }
 }
-
-module.exports = { sendOrderConfirmation };

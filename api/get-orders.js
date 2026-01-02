@@ -1,10 +1,7 @@
-// FILE: api/get-orders.js
-// This secure serverless function fetches all orders for the
-// currently authenticated user, sorted by the most recent first.
-
+// Cache-bust version: 1.0.2 - Forcing a fresh deploy
+// FILE: api/get-orders.js (Definitive Final Version)
 import admin from 'firebase-admin';
 
-// --- Initialize Firebase Admin SDK ---
 if (!admin.apps.length) {
   try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
@@ -19,11 +16,6 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const auth = admin.auth();
 
-/**
- * Verifies the Firebase ID token from the Authorization header.
- * @param {object} req - The request object.
- * @returns {Promise<string|null>} The user's UID if valid, otherwise null.
- */
 async function getVerifiedUid(req) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
@@ -37,13 +29,8 @@ async function getVerifiedUid(req) {
     }
 }
 
-// --- Main API Handler ---
 export default async function handler(req, res) {
-    // --- Standard CORS & Method Check ---
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-    if (req.method === 'OPTIONS') return res.status(200).end();
+   
     if (req.method !== 'GET') return res.status(405).end('Method Not Allowed');
 
     const uid = await getVerifiedUid(req);
@@ -51,22 +38,27 @@ export default async function handler(req, res) {
 
     try {
         const ordersRef = db.collection('orders');
-        // Query for orders belonging to this user, sorted by date
+        // This query now correctly matches your database index (descending)
         const snapshot = await ordersRef.where('userId', '==', uid)
                                        .orderBy('orderDate', 'desc')
                                        .get();
 
         if (snapshot.empty) {
-            return res.status(200).json([]); // Return an empty array if no orders found
+            return res.status(200).json([]);
         }
 
+        // This mapping logic is now simple, direct, and correct.
         const orders = snapshot.docs.map(doc => {
             const data = doc.data();
+            const orderDate = data.orderDate && typeof data.orderDate.toDate === 'function' 
+                ? data.orderDate.toDate().toISOString() 
+                : new Date().toISOString();
+
             return {
                 id: doc.id,
                 ...data,
-                // Convert Firestore Timestamp to a simple ISO string for the frontend
-                orderDate: data.orderDate.toDate().toISOString()
+                status: data.status || 'Pending', // Use the real status, or fall back to Pending.
+                orderDate: orderDate
             };
         });
 

@@ -3,20 +3,12 @@
 // live connection to Firebase Authentication.
 
 const auth = (() => {
-    // --- IMPORTANT ACTION REQUIRED ---
-    // PASTE YOUR FIREBASE CONFIG OBJECT HERE
-    const firebaseConfig = {
-    apiKey: "AIzaSyBzU9YCpen0fJ12eGSnLeQGXsavSa9kX3w",
-    authDomain: "luxury-hampers-app.firebaseapp.com",
-    projectId: "luxury-hampers-app",
-    storageBucket: "luxury-hampers-app.firebasestorage.app",
-    messagingSenderId: "314612428903",
-    appId: "1:314612428903:web:39c34c1d63e0aa818124c2",
-    measurementId: "G-LXPLK738BM"
-  };
+
 
 
     // Initialize Firebase
+    console.log('--- DEFINITIVE TEST: firebaseConfig object ---');
+    console.log(firebaseConfig);
     firebase.initializeApp(firebaseConfig);
     const fbAuth = firebase.auth();
     const db = firebase.firestore();
@@ -38,18 +30,65 @@ const auth = (() => {
             console.log("Firebase Auth: User is signed in:", currentUser.name);
 
             // 2. The local cart (from when they were a guest).
-            const localCart = JSON.parse(localStorage.getItem('luxuryHampersCart')) || [];
-            
+           const localCartString = localStorage.getItem('luxuryHampersCart');
+            let localCart = []; // Default to an empty array
+
+            if (localCartString) {
+                try {
+                    const parsedData = JSON.parse(localCartString);
+                    const now = new Date().getTime();
+
+                    // Check if it's the NEW object format { cart: [], expires: ... }
+                    if (parsedData && typeof parsedData === 'object' && Array.isArray(parsedData.cart)) {
+                        // Check if the cart has expired
+                        if (!parsedData.expires || now <= parsedData.expires) {
+                            localCart = parsedData.cart; // Extract the actual cart array
+                            console.log("auth.js: Loaded local cart (new format):", localCart.length, "items");
+                        } else {
+                            console.log("auth.js: Found expired local cart, clearing.");
+                            localStorage.removeItem('luxuryHampersCart'); // Clear expired cart
+                        }
+                    }
+                    // Check if it's the OLD format (just an array) for backward compatibility
+                    else if (Array.isArray(parsedData)) {
+                        localCart = parsedData; // Use the old array directly
+                        console.log("auth.js: Loaded local cart (old format):", localCart.length, "items");
+                        // Optionally re-save in new format here if needed
+                    }
+                    // Handle corrupted data
+                    else {
+                         console.warn("auth.js: Local cart data is invalid format. Clearing.");
+                         localStorage.removeItem('luxuryHampersCart');
+                    }
+
+                } catch (error) {
+                    console.error("Error parsing local cart in auth.js:", error);
+                    localStorage.removeItem('luxuryHampersCart'); // Clear corrupted data
+                }
+            } else {
+                 console.log("auth.js: No local cart found in localStorage.");
+            }
+
             // 3. The remote cart (saved in their profile).
             const remoteCart = currentUser.cart || [];
+            console.log("auth.js: Remote cart:", remoteCart.length, "items");
 
             // 4. Merge the carts: Combine both, giving precedence to remote items if duplicates exist.
-            const mergedCart = [...remoteCart];
-            localCart.forEach(localItem => {
-                if (!mergedCart.some(remoteItem => remoteItem.id === localItem.id)) {
-                    mergedCart.push(localItem);
-                }
-            });
+            const mergedCart = [...remoteCart]; // Start with the remote cart
+
+            // --- SAFETY CHECK ADDED ---
+            if (Array.isArray(localCart) && localCart.length > 0) {
+                 console.log("auth.js: Merging local cart items into remote cart...");
+                localCart.forEach(localItem => { // This line (previously line 40) should now work
+                    // Only add local item if an item with the same ID isn't already in mergedCart (from remote)
+                    if (!mergedCart.some(mergedItem => mergedItem.id === localItem.id)) {
+                        mergedCart.push(localItem);
+                    }
+                });
+            } else {
+                 console.log("auth.js: No valid local cart items to merge.");
+            }
+            console.log("auth.js: Merged cart:", mergedCart.length, "items");
             
             // 5. Update localStorage with the definitive merged cart.
             localStorage.setItem('luxuryHampersCart', JSON.stringify(mergedCart));

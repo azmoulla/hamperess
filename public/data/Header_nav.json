@@ -1,52 +1,84 @@
 [
   {
     "title": "Bestsellers",
-    "linkType": "scrollTo",
-    "target": "bestsellers",
+    "linkType": "route",
+    "target": "/product-listing",
     "argument": "Bestsellers",
     "isSale": false
   },
   {
-    "title": "All Hampers",
-    "linkType": "route",
-    "target": "/product-listing",
-    "argument": "__ALL_PRODUCTS_TRIGGER__",
-    "isSale": false
-  },
-  {
     "title": "Occasions",
-    "linkType": "route",
-    "target": "/product-listing",
-    "argument": "Birthday Hampers",
-    "isSale": false
+    "isMegaMenu": true,
+    "subMenu": [
+      {
+        "title": "Birthday Hampers",
+        "argument": "Birthday Hampers"
+      },
+      {
+        "title": "CCTV",
+        "argument": "CCTV"
+      },
+      {
+        "title": "Anniversary Hampers",
+        "argument": "Anniversary Hampers"
+      },
+      {
+        "title": "Thank You Gifts",
+        "argument": "Thank You Gifts"
+      },
+      {
+        "title": "New Baby Gifts",
+        "argument": "New Baby Gifts"
+      },
+      {
+        "title": "Congratulations",
+        "argument": "Congratulations Hampers"
+      }
+    ]
   },
   {
     "title": "Recipient",
-    "linkType": "route",
-    "target": "/product-listing",
-    "argument": "Congratulations Hampers",
-    "isSale": false
+    "isMegaMenu": true,
+    "subMenu": [
+      {
+        "title": "For Her",
+        "argument": "For Her"
+      },
+      {
+        "title": "For Him",
+        "argument": "For Him"
+      },
+      {
+        "title": "For Couples",
+        "argument": "For Couples"
+      },
+      {
+        "title": "For Families",
+        "argument": "For Families"
+      }
+    ]
   },
   {
-    "title": "Food Only",
-    "linkType": "route",
-    "target": "/product-listing",
-    "argument": "Food Only Selection",
-    "isSale": false
-  },
-  {
-    "title": "Wine & Spirits",
-    "linkType": "route",
-    "target": "/product-listing",
-    "argument": "Premium Wine & Spirits",
-    "isSale": false
-  },
-  {
-    "title": "SALE",
-    "linkType": "route",
-    "target": "/product-listing",
-    "argument": "Special Sale Items",
-    "isSale": true
+    "title": "Food & Drink",
+    "isMegaMenu": true,
+    "subMenu": [
+      {
+        "title": "All Hampers",
+        "argument": "__ALL_PRODUCTS_TRIGGER__"
+      },
+      {
+        "title": "Food Only",
+        "argument": "Food Only Selection"
+      },
+      {
+        "title": "Wine & Spirits",
+        "argument": "Premium Wine & Spirits"
+      },
+      {
+        "title": "My Day Hampers",
+        "argument": "My Day Hampers"
+      }
+    ]
   },
   {
     "title": "Create Your Own",
@@ -62,11 +94,11 @@
     "argument": "Corporate Gifting Solutions",
     "isSale": false
   },
-   {
-    "title": "My day hamper",
+  {
+    "title": "SALE",
     "linkType": "route",
     "target": "/product-listing",
-    "argument": "My Day Hampers",
-    "isSale": false
+    "argument": "Special Sale Items",
+    "isSale": true
   }
 ]

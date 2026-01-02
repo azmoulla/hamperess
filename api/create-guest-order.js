@@ -37,10 +37,7 @@ function generateOrderId() {
 export default async function handler(req, res) {
   try {
     // --- Standard CORS & Method Check (for consistency) ---
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-    if (req.method === 'OPTIONS') return res.status(200).end();
+   
     if (req.method !== 'POST') return res.status(405).end('Method Not Allowed');
 
     // For guest orders, we don't need to verify a user token.

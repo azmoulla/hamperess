@@ -1,59 +1,70 @@
-// FILE: api/products.js
-// This is your Vercel Serverless Function for fetching products.
-// It connects securely to your Firebase database to get the main product list.
+// FILE: api/products.js (Final Version with Full CRUD and Soft Delete)
+import { db, verifyAdmin } from './_lib/firebase-admin-helper.js';
 
-import admin from 'firebase-admin';
-
-// This is the secret service account key you downloaded from Firebase.
-// It will be read from the Vercel Environment Variable you configured.
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-
-// Initialize the Firebase Admin SDK, but only if it hasn't been already.
-// This prevents re-initialization on subsequent function calls.
-if (!admin.apps.length) {
-  try {
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
-  } catch (error) {
-    console.error('Firebase admin initialization error:', error.stack);
-  }
-}
-
-const db = admin.firestore();
-
-// This is the main function Vercel will run when a browser visits /api/products
 export default async function handler(req, res) {
-  // Set CORS headers to allow your frontend (on any domain) to call this API.
-  // This is a standard security requirement for APIs.
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+    
+    // READ ALL ACTIVE PRODUCTS (GET)
+    if (req.method === 'GET') {
+        try {
+            const productsRef = db.collection('products');
+            const snapshot = await productsRef.get();
+            if (snapshot.empty) return res.status(200).json([]);
+            
+            // Fetches all docs and filters in memory to ensure products without 'isArchived' are included.
+            const products = snapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(product => product.isArchived !== true);
 
-  // Vercel requires handling the OPTIONS method for CORS pre-flight requests.
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  try {
-    // Get a reference to the 'products' collection in your Firestore database.
-    const productsRef = db.collection('products');
-    const snapshot = await productsRef.get();
-
-    if (snapshot.empty) {
-      console.log('No product documents found in Firestore.');
-      return res.status(404).json({ error: 'No products found' });
+            return res.status(200).json(products);
+        } catch (error) {
+            console.error("Error in api/products GET:", error);
+            return res.status(500).json({ error: 'Internal Server Error' });
+        }
     }
 
-    // Loop through the documents and create an array of product data.
-    const products = [];
-    snapshot.forEach(doc => {
-      products.push({ id: doc.id, ...doc.data() });
-    });
+    // All subsequent methods require admin privileges.
+    const isAdmin = await verifyAdmin(req);
+    if (!isAdmin) return res.status(403).json({ error: 'Forbidden' });
 
-    // Send the array of products back to the frontend as JSON data.
-    res.status(200).json(products);
-  } catch (error) {
-    console.error('Error fetching products from Firestore:', error);
-    res.status(500).json({ error: 'Internal Server Error', details: error.message });
-  }
+    // CREATE NEW PRODUCT (POST)
+    if (req.method === 'POST') {
+        try {
+            const newProduct = req.body;
+            newProduct.isArchived = false; // Explicitly mark new products as not archived.
+            const docRef = await db.collection('products').add(newProduct);
+            return res.status(201).json({ id: docRef.id, ...newProduct });
+        } catch (error) {
+            return res.status(500).json({ error: 'Failed to create product.' });
+        }
+    }
+    
+    // UPDATE EXISTING PRODUCT (PUT)
+    if (req.method === 'PUT') {
+        try {
+            const { id } = req.query;
+            const updatedData = req.body;
+            if (!id) return res.status(400).json({ error: 'Product ID is required.'});
+
+            await db.collection('products').doc(id).update(updatedData);
+            return res.status(200).json({ success: true, message: 'Product updated.' });
+        } catch (error) {
+            return res.status(500).json({ error: 'Failed to update product.' });
+        }
+    }
+
+    // ARCHIVE PRODUCT (DELETE)
+    if (req.method === 'DELETE') {
+        try {
+            const { id } = req.query;
+            if (!id) return res.status(400).json({ error: 'Product ID is required.'});
+            
+            // This performs a "soft delete" by setting the isArchived flag.
+            await db.collection('products').doc(id).update({ isArchived: true });
+            return res.status(200).json({ success: true, message: 'Product archived.' });
+        } catch (error) {
+            return res.status(500).json({ error: 'Failed to archive product.' });
+        }
+    }
+    
+    return res.status(405).end();
 }
