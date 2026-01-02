@@ -1,3 +1,3 @@
 [build]
-  command = "npm -v && node -v && npm install && npm run build --verbose"
-  publish = "public"
+  command = "npm run build"
+  publish = "."       # <--- CHANGE THIS from "public" to "."
