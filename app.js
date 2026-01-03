@@ -996,37 +996,55 @@ function handleGlobalClick(e) {
 /* REPLACE the existing displayMenu function with this one */
 /* REPLACE the existing displayMenu function with this one */
 function displayMenu(menuItems) {
+    // 1. DEBUG: Log exactly what the API gave us. 
+    // Open your browser console (F12) to see this "RAW MENU DATA".
+    console.log("RAW MENU DATA RECEIVED:", menuItems);
+
     const navLinksContainer = document.getElementById('nav-links');
     const mobileNavLinks = document.getElementById('mobile-nav-links');
     
     if (!navLinksContainer || !mobileNavLinks) return;
 
-    // --- FIX: Handle different API response formats ---
-    // This allows the app to work whether the API returns [ ... ] or { data: [ ... ] }
+    // 2. ROBUST DATA HANDLING
     let items = [];
-    if (Array.isArray(menuItems)) {
-        items = menuItems;
-    } else if (menuItems && Array.isArray(menuItems.menu)) {
-        items = menuItems.menu;
-    } else if (menuItems && Array.isArray(menuItems.data)) {
-        items = menuItems.data;
-    } else {
-        console.error("displayMenu: Could not find a list in the menu data:", menuItems);
-        return; 
-    }
-    // ------------------------------------------------
 
+    if (Array.isArray(menuItems)) {
+        // Option A: It's already a list (Perfect)
+        items = menuItems;
+    } else if (menuItems && typeof menuItems === 'object') {
+        // Option B: It's inside a wrapper key (Check common names)
+        if (Array.isArray(menuItems.menu)) items = menuItems.menu;
+        else if (Array.isArray(menuItems.data)) items = menuItems.data;
+        else if (Array.isArray(menuItems.items)) items = menuItems.items;
+        else {
+            // Option C: It's an object acting like a list (e.g. { "0": {...}, "1": {...} })
+            // We force it into an array using Object.values()
+            console.warn("Menu is an object, attempting to convert to array...");
+            items = Object.values(menuItems).filter(i => i && typeof i === 'object');
+        }
+    }
+
+    // 3. FINAL SAFETY CHECK
+    if (!Array.isArray(items) || items.length === 0) {
+        console.error("CRITICAL: Could not extract a menu list. The header will be empty.");
+        return;
+    }
+
+    // 4. RENDER (Standard Logic)
     let desktopMenuHtml = '';
     let mobileMenuHtml = `<a href="/#/account" class="mobile-nav-link-item account-link"><i class="fa-solid fa-user"></i> My Account / Log In</a>`;
 
     items.forEach(item => {
+        // Skip invalid items
+        if (!item || !item.title) return;
+
         const saleClass = item.isSale ? 'sale-item' : '';
 
         if (item.isMegaMenu && item.subMenu) {
-            // Desktop Mega Menu
-            const subMenuLinks = item.subMenu.map(subItem => 
-                `<a href="/#/category/${subItem.argument}" class="mega-menu-link">${subItem.title}</a>`
-            ).join('');
+            // Desktop
+            const subMenuLinks = Array.isArray(item.subMenu) 
+                ? item.subMenu.map(subItem => `<a href="/#/category/${subItem.argument}" class="mega-menu-link">${subItem.title}</a>`).join('')
+                : '';
 
             desktopMenuHtml += `
                 <div class="nav-item-with-mega-menu">
@@ -1036,7 +1054,7 @@ function displayMenu(menuItems) {
                     </div>
                 </div>`;
 
-            // Mobile Accordion
+            // Mobile
             mobileMenuHtml += `
                 <div class="mobile-nav-accordion">
                     <button class="mobile-nav-accordion-header">
@@ -1044,7 +1062,7 @@ function displayMenu(menuItems) {
                         <i class="fa-solid fa-chevron-down"></i>
                     </button>
                     <div class="mobile-nav-accordion-content">
-                        ${item.subMenu.map(subItem => `<a href="/#/category/${subItem.argument}" class="mobile-nav-link-item sub-item">${subItem.title}</a>`).join('')}
+                        ${Array.isArray(item.subMenu) ? item.subMenu.map(subItem => `<a href="/#/category/${subItem.argument}" class="mobile-nav-link-item sub-item">${subItem.title}</a>`).join('') : ''}
                     </div>
                 </div>`;
         } else {
@@ -5508,6 +5526,7 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
+
 
 
 
