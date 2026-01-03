@@ -3128,7 +3128,7 @@ function renderCartItems() {
 
   // 1. Get the data
   // 1. Define the global variable
-window.savedForLater = JSON.parse(localStorage.getItem('savedForLater')) || [];
+window.savedForLater = JSON.parse(localStorage.getItem('window.savedForLater')) || [];
 
 // 2. Generate the HTML safely
 const savedItemsHTML = window.savedForLater.map(item => {
@@ -3160,11 +3160,11 @@ if (savedContainer) {
         <div id="active-cart-items">
             ${cart.length > 0 ? activeCartHtml : '<p>Your basket is empty.</p>'}
         </div>
-        ${savedForLater.length > 0 ? `
+        ${window.savedForLater.length > 0 ? `
             <div class="saved-for-later-container">
                 <h3>Saved for Later</h3>
                 <div id="saved-items-list">
-                    ${savedForLaterHtml}
+                    ${window.savedForLaterHtml}
                 </div>
             </div>
         ` : ''}
@@ -5574,6 +5574,7 @@ async function fetchOccasions() {
         console.error("fetchOccasions: Failed to fetch occasions from /api/admin/occasions.");
     }
 }
+
 
 
 
