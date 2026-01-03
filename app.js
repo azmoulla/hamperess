@@ -440,7 +440,7 @@ let checkoutStep = 1; // 1: Details, 2: Payment, 3: Review
 let guestDetails = {}; // To store guest info between steps
 let editingCartItemId = null; // Tracks the ID of the hamper being edited
 let ribbonTimeout = null;     // Manages the timer for the confirmation ribbon
-let allProducts = [], cart = [], customHamperItems = [], selectedCustomItems = [];savedForLater = [];
+let allProducts = [], cart = [], customHamperItems = [], selectedCustomItems = []; window.savedForLater = [];
 let userOrders = [], userAddresses = [], userReturns = [];
 let selectedCheckoutAddressId = null;
 let appConfig = {};
@@ -5563,6 +5563,7 @@ async function fetchOccasions() {
         console.error("fetchOccasions: Failed to fetch occasions from /api/admin/occasions.");
     }
 }
+
 
 
 
