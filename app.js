@@ -491,7 +491,7 @@ const pageWishlist = document.getElementById('page-wishlist');
 const pageReviewForm = document.getElementById('page-review-form');
 const quickViewModalOverlay = document.getElementById('quick-view-modal-overlay');
 const quickViewContent = document.getElementById("quick-view-content");
-const savedForLater = [];
+
 // ADD THIS HELPER FUNCTION to your public/app.js file
 // FILE: public/app.js
 
@@ -5480,6 +5480,7 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
+
 
 
 
