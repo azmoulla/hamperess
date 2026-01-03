@@ -5413,17 +5413,15 @@ async function handleReviewSubmit(e, orderId) {
 async function fetchSiteSettings() {
     console.log("fetchSiteSettings: Fetching site configuration from CMS.");
     try {
-        // Use a simple fetch, as the public site does not need admin authentication
+        // Try to get settings from the server
         const response = await fetch('/api/admin/site_settings'); 
         if (!response.ok) throw new Error('Could not fetch site settings.');
         
         const settingsData = await response.json();
-        
-        // Update the global settings variable
         window.appSettings = settingsData; 
+        applyCssVariables(settingsData); // Apply server settings
         
-        // Apply CSS variables immediately for colors and fonts
-        applyCssVariables(settingsData); 
+        // Update threshold display
         const thresholdEl = document.getElementById('top-bar-threshold');
         if (thresholdEl) {
             const symbol = settingsData.baseCurrencySymbol || '£';
@@ -5431,14 +5429,25 @@ async function fetchSiteSettings() {
             thresholdEl.textContent = `${symbol}${threshold}`;
         }
         console.log("Site settings loaded and applied.");
+
     } catch (error) {
         console.error("Error fetching site settings. Using defaults:", error);
-        // Fallback to defaults if the API call fails
-        window.appSettings = {
+        
+        // --- THE FIX IS HERE ---
+        // Define defaults AND apply them immediately
+        const defaults = {
             freeDeliveryThreshold: 50,
             baseDeliveryCharge: 4.99,
-            // Add other defaults as necessary
+            primaryColor: '#000000',      // Default Black
+            ctaColorGreen: '#28a745',     // Default Green
+            fontFamilyHeadings: 'serif',
+            fontFamilyBody: 'sans-serif',
+            baseCurrencySymbol: '£'
         };
+        
+        window.appSettings = defaults;
+        applyCssVariables(defaults); // <--- This forces the colors to show up!
+        // -----------------------
     }
 }
 function formatCurrency(amount) {
@@ -5563,6 +5572,7 @@ async function fetchOccasions() {
         console.error("fetchOccasions: Failed to fetch occasions from /api/admin/occasions.");
     }
 }
+
 
 
 
