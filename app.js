@@ -419,7 +419,7 @@ let checkoutStep = 1; // 1: Details, 2: Payment, 3: Review
 let guestDetails = {}; // To store guest info between steps
 let editingCartItemId = null; // Tracks the ID of the hamper being edited
 let ribbonTimeout = null;     // Manages the timer for the confirmation ribbon
-let allProducts = [], cart = [], customHamperItems = [], selectedCustomItems = [];savedForLater = [];
+let allProducts = [], cart = [], customHamperItems = [], selectedCustomItems = [], savedForLater = [];
 let userOrders = [], userAddresses = [], userReturns = [];
 let selectedCheckoutAddressId = null;
 let appConfig = {};
@@ -5461,6 +5461,7 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
+
 
 
 
