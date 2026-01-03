@@ -3023,20 +3023,19 @@ function renderCartItems() {
     }
 
     // 2. Determine if checkout should be disabled
-    if (goToCheckoutBtn) {
+    if (typeof goToCheckoutBtn !== 'undefined' && goToCheckoutBtn) {
         goToCheckoutBtn.disabled = (!cart || cart.length === 0);
     }
 
     // 3. Handle Empty State
     if ((!cart || cart.length === 0) && savedForLaterList.length === 0) {
-        if (cartItemsContainer) {
+        if (typeof cartItemsContainer !== 'undefined' && cartItemsContainer) {
             cartItemsContainer.innerHTML = '<p>Your basket is empty.</p>';
         }
         return;
     }
 
     // 4. Generate HTML for Active Cart Items
-    // NOTICE the "{" after "item =>". This is critical!
     const activeCartHtml = cart.map(item => {
         if (item.isCustom) {
             // Logic for Custom Hampers
@@ -3123,7 +3122,7 @@ function renderCartItems() {
     }).join('');
 
     // 6. Update the Container
-    if (cartItemsContainer) {
+    if (typeof cartItemsContainer !== 'undefined' && cartItemsContainer) {
         cartItemsContainer.innerHTML = `
             <div id="active-cart-items">
                 ${cart.length > 0 ? activeCartHtml : '<p>Your basket is empty.</p>'}
@@ -5538,6 +5537,7 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
+
 
 
 
