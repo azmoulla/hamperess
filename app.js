@@ -1,22 +1,22 @@
 // FILE: app.js
 // This file has been reorganized into logical kits for better maintainability.
 // Import the handlers (ensure file paths are correct relative to app.js)
-//import aboutUsHandler from './api/admin/about_us.js';
-//import contactUsHandler from './api/admin/contact_us.js';
+//import aboutUsHandler from './api/content-handler?action=about_us.js';
+//import contactUsHandler from './api/content-handler?action=contact_us.js';
 
 // ... inside your Express application setup ...
-import './input.css';
+
 // Register the handlers
 // The app.all method allows both GET (fetching) and POST (saving) to use the same handler
-//app.all('/api/admin/about_us', aboutUsHandler);      // <-- THIS WAS MISSING/CRASHING BEFORE
-//app.all('/api/admin/contact_us', contactUsHandler);  // <-- THIS IS THE NEW MISSING ROUTE
+//app.all('/api/content-handler?action=about_us', aboutUsHandler);      // <-- THIS WAS MISSING/CRASHING BEFORE
+//app.all('/api/content-handler?action=contact_us', contactUsHandler);  // <-- THIS IS THE NEW MISSING ROUTE
 // ------------------------------------------------------------------ //
 // -------------------- KIT: CORE SETUP & STATE -------------------- //
 // ------------------------------------------------------------------ //
 // TEST - IF THIS COMMENT DISAPPEARS, THE FILE IS BEING OVERWRITTEN.
-const searchClient = algoliasearch(window.ALGOLIA_APP_ID, window.ALGOLIA_SEARCH_KEY);
+const searchClient = algoliasearch(ALGOLIA_APP_ID, ALGOLIA_SEARCH_KEY);
 const searchIndex = searchClient.initIndex('products');
-//import siteSettingsHandler from './api/admin/site_settings.js';
+//import siteSettingsHandler from './api/content-handler?action=site_settings.js';
 // --- PWA SERVICE WORKER REGISTRATION ---
 console.log('app.js has started successfully!');
 
@@ -171,27 +171,6 @@ const CLICK_HANDLERS = [
             return false;
         }
     },
-    {
-        selector: '.faq-category-link', // This is the class on the new FAQ category links
-        handler: (target, e) => {
-            e.preventDefault(); // Stop the browser from changing the hash (which triggers the router)
-            
-            const href = target.getAttribute('href'); // Get the href (e.g., "#faq-category-General")
-            if (href) {
-                try {
-                    // Find the section on the page with the matching ID
-                    const section = document.querySelector(href); 
-                    if (section) {
-                        // Scroll smoothly to that section
-                        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }
-                } catch (err) {
-                    console.error("Error scrolling to FAQ section:", err);
-                }
-            }
-            return true; // Stop handleGlobalClick from processing this click further
-        }
-    },
     { selector: '.remove-discount-btn', handler: removeDiscount },
     { selector: '#header-title', handler: showAllProducts },
     { selector: '#hero-shop-now-btn', handler: () => document.getElementById('products-section').scrollIntoView({ behavior: 'smooth' }) },
@@ -234,7 +213,7 @@ const CLICK_HANDLERS = [
         showConfirmationModal('Are you sure you want to cancel this return request?', async () => {
             try {
                 // 1. Sends the correct PUT request to the back end
-                await fetchWithAuth(`/api/returns?returnId=${returnId}`, {
+                await fetchWithAuth(`→ /api/user-handler?action=returns?returnId=${returnId}`, {
                     method: 'PUT'
                 });
 
@@ -308,7 +287,7 @@ const CLICK_HANDLERS = [
             const addressId = target.dataset.addressId;
             showConfirmationModal('Are you sure you want to delete this address?', async () => {
                 try {
-                    await fetchWithAuth(`/api/addresses?addressId=${addressId}`, { method: 'DELETE' });
+                    await fetchWithAuth(`/api/user-handler?action=addresses?addressId=${addressId}`, { method: 'DELETE' });
                     // Refresh the list from the server after deleting
                     userAddresses = userAddresses.filter(addr => addr.id !== addressId);
                     renderMyAddressesPage();
@@ -327,12 +306,12 @@ const CLICK_HANDLERS = [
             
             try {
                 // Set the isDefault flag to true and send the update
-                await fetchWithAuth('/api/addresses', {
+                await fetchWithAuth('/api/user-handler?action=addresses', {
                     method: 'PUT',
                     body: JSON.stringify({ addressId, ...addressToUpdate, isDefault: true })
                 });
                 // Refresh the list from the server to get the updated states
-                userAddresses = await fetchWithAuth('/api/addresses');
+                userAddresses = await fetchWithAuth('/api/user-handler?action=addresses');
                 renderMyAddressesPage();
             } catch (error) {
                 showConfirmationModal(`Error setting default address: ${error.message}`);
@@ -440,7 +419,7 @@ let checkoutStep = 1; // 1: Details, 2: Payment, 3: Review
 let guestDetails = {}; // To store guest info between steps
 let editingCartItemId = null; // Tracks the ID of the hamper being edited
 let ribbonTimeout = null;     // Manages the timer for the confirmation ribbon
-let allProducts = [], cart = [], customHamperItems = [], selectedCustomItems = []; window.savedForLater = [];
+let allProducts = [], cart = [], customHamperItems = [], selectedCustomItems = [];savedForLater = [];
 let userOrders = [], userAddresses = [], userReturns = [];
 let selectedCheckoutAddressId = null;
 let appConfig = {};
@@ -609,14 +588,7 @@ const router = {
         this.loadRoute(path);
     },
     loadRoute(path) {
-        // --- THIS IS THE FIX ---
-        // 1. Check for a direct, static match first.
-        if (this.routes[path]) {
-            this.routes[path](); // e.g., handles '/' or '/checkout'
-            return;
-        }
-
-        // 2. If no static match, THEN check for dynamic routes.
+        // Dynamic route matching
         for (const routePath in this.routes) {
             if (routePath.includes(':')) {
                 const routeParts = routePath.split('/');
@@ -631,15 +603,18 @@ const router = {
                         return part === pathParts[i];
                     });
                     if (isMatch) {
-                        this.routes[routePath](params); // e.g., handles '/products/:slug' or '/:slug'
+                        this.routes[routePath](params);
                         return;
                     }
                 }
             }
         }
-        
-        // 3. If no static or dynamic match, go home.
-        this.navigate('/');
+        // Static route matching
+        if (this.routes[path]) {
+            this.routes[path]();
+        } else {
+            this.navigate('/');
+        }
     },
     navigate(path) {
         if (window.location.hash.slice(1) !== path) window.location.hash = path;
@@ -667,12 +642,11 @@ function defineRoutes() {
     router.addRoute('/account/settings', renderAccountSettingsPage);
     router.addRoute('/account/wishlist', renderWishlistPage);
     router.addRoute('/account/returns', renderMyReturnsPage);
+    router.addRoute('/contact-us', () => fetchAndDisplayStaticPage('contact_us'));
     router.addRoute('/account/orders/:id/review', params => renderReviewFormPage(params.id));
-
-    // --- NEW DYNAMIC ROUTE ---
-    // This single route replaces all your old static page routes.
-    // It must be LAST to act as a fallback.
-    router.addRoute('/:slug', params => fetchAndDisplayStaticPage(params.slug));
+    router.addRoute('/our-mission', () => fetchAndDisplayStaticPage('our_mission'));
+    router.addRoute('/privacy-policy', () => fetchAndDisplayStaticPage('privacy_policy'));
+    router.addRoute('/terms-and-conditions', () => fetchAndDisplayStaticPage('terms_and_conditions'));
 }
 
 
@@ -703,7 +677,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 1. Fetch ALL critical data first and wait for it to finish.
     //    fetchProducts() has been moved here.
     await Promise.all([
-        // fetchConfig(),
+        fetchConfig(),
         fetchMenu(),
         fetchProducts(),
         fetchSiteSettings() 
@@ -813,7 +787,20 @@ async function handleAuthStateChange() {
         router.handleRouteChange();
     }
 }
-
+async function fetchConfig() {
+    console.log("fetchConfig: Fetching app configuration.");
+    try {
+        const configData = await fetchData('data/config.json');
+        if (configData) {
+            appConfig = configData;
+        } else {
+            // This will log an error if the file is empty or malformed
+            console.error("Failed to parse config.json. Please check the file for syntax errors (e.g., trailing commas).");
+        }
+    } catch (error) {
+        console.error("Error fetching config.json:", error);
+    }
+}
 function setupSwipeListeners(element) {
     let touchstartX = 0;
     let touchendX = 0;
@@ -875,28 +862,13 @@ function setupEventListeners() {
             renderWishlistPage();
         }
     });
-
-  const newsletterForm = document.getElementById('newsletter-form');
+    const newsletterForm = document.getElementById('newsletter-form');
     if (newsletterForm) {
-        newsletterForm.addEventListener('submit', async (e) => {
+        newsletterForm.addEventListener('submit', (e) => {
             e.preventDefault();
-            const emailInput = document.getElementById('newsletter-email');
-            const email = emailInput.value;
-            
-            try {
-                const response = await fetch('/api/subscribe', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: email })
-                });
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error);
-                
-                showConfirmationModal('Thank you for subscribing!');
-                newsletterForm.reset();
-            } catch (error) {
-                showConfirmationModal(`Error: ${error.message}`);
-            }
+            const email = document.getElementById('newsletter-email').value;
+            showConfirmationModal(`Thank you for subscribing, ${email}! (This is a demo).`);
+            newsletterForm.reset();
         });
     }
 
@@ -979,7 +951,12 @@ function manageFilterLocation() {
 
 
 
+// REPLACE your existing handleGlobalClick function with this.
+// In app.js
 
+// REPLACE your current handleGlobalClick function with this diagnostic version
+// REPLACE your handleGlobalClick function with this ADVANCED diagnostic version
+// REPLACE your entire handleGlobalClick function with this final version
 function handleGlobalClick(e) {
     // First, loop through all our specific button handlers
     for (const action of CLICK_HANDLERS) {
@@ -1011,7 +988,12 @@ function handleGlobalClick(e) {
     }
 }
 
+// In app.js
 
+// Replace your existing displayMenu function with this diagnostic version
+// FILE: public/app.js
+
+/* REPLACE the existing displayMenu function with this one */
 function displayMenu(menuItems) {
     const navLinksContainer = document.getElementById('nav-links');
     const mobileNavLinks = document.getElementById('mobile-nav-links');
@@ -1144,7 +1126,7 @@ async function fetchWithAuth(url, options = {}) {
 
     try {
         // Call the new back-end API to validate the code
-        const response = await fetch(`/api/validate-discount?code=${trimmedCode}`);
+        const response = await fetch(`/api/user-handler?action=validate_discount&code=${trimmedCode}`);
         const discountData = await response.json();
 
         if (!response.ok) {
@@ -1180,7 +1162,7 @@ async function fetchData(url) {
             try {
                 const errorData = await response.json();
                 errorMsg = errorData.error || errorData.message || response.statusText;
-            } catch (e) { }
+            } catch (e) { /* Ignore parsing error if response isn't JSON */ }
             console.error(`[fetchData] HTTP error for ${url}: ${response.status} - ${errorMsg}`);
             throw new Error(`HTTP error! status: ${response.status} - ${errorMsg}`);
         }
@@ -1198,7 +1180,11 @@ async function fetchData(url) {
     }
 }
 
+// REPLACE this entire function in your public/app.js file
 
+// REPLACE your entire existing fetchInitialUserData function with this one.
+
+// In app.js, REPLACE this entire function
 
 async function fetchInitialUserData() {
     if (auth.isLoggedIn()) {
@@ -1206,10 +1192,10 @@ async function fetchInitialUserData() {
             console.log("Fetching user data (addresses, orders, and returns)...");
             
             const results = await Promise.allSettled([
-                fetchWithAuth('/api/addresses'),
+                fetchWithAuth('/api/user-handler?action=addresses'),
                 // THIS LINE IS THE FIX: It forces the browser to ignore its cache for orders.
-                fetchWithAuth('/api/get-orders', { cache: 'no-cache' }), 
-                fetchWithAuth('/api/returns', { cache: 'no-cache' }) // Also good practice to add for returns
+                fetchWithAuth('/api/orders-handler?action=get_orders', { cache: 'no-cache' }), 
+                fetchWithAuth('→ /api/user-handler?action=returns', { cache: 'no-cache' }) // Also good practice to add for returns
             ]);
 
             const addressesResult = results[0];
@@ -1254,7 +1240,9 @@ async function fetchInitialUserData() {
     return Promise.resolve();
 }
 
+// FILE: public/app.js
 
+// Replace the existing fetchProducts function with this one
 async function fetchProducts() {
     console.log("fetchProducts: Fetching products data from backend API.");
     const productGrid = document.getElementById('product-grid');
@@ -1276,7 +1264,7 @@ async function fetchProducts() {
         productGrid.innerHTML = skeletonHtml;
     }
 
-    const productsData = await fetchData('/api/products'); 
+    const productsData = await fetchData('/api/product-handler?action=products'); 
     if (productsData && !productsData.error) {
         allProducts = productsData.map(product => {
             const rawPrice = product.price;
@@ -1301,7 +1289,7 @@ async function fetchProducts() {
         // 2. Once data is fetched, call updateProductView to replace skeletons with real products
         updateProductView(); 
     } else {
-        console.error("Failed to fetch products from /api/products:", productsData ? productsData.error : "No data returned");
+        console.error("Failed to fetch products from /api/product-handler?action=products:", productsData ? productsData.error : "No data returned");
         allProducts = [];
         currentlyDisplayedProducts = [];
         if (productGrid) {
@@ -1310,37 +1298,43 @@ async function fetchProducts() {
     }
 }
 
-
+async function fetchOccasions() {
+    console.log("fetchOccasions: Fetching occasions data.");
+    // Updated to use content-handler
+    const occasions = await fetchData('/api/content-handler?action=occasions');
+    if (occasions) displayOccasions(occasions);
+}
 
 async function fetchMenu() {
    console.log("fetchMenu: Fetching menu data from API.");
-    // This now fetches from your new API endpoint instead of the static JSON file
-    const menuItems = await fetchData('/api/get-menu');
+    // Updated to use admin-handler
+    const menuItems = await fetchData('/api/admin-handler?action=get_menu');
     if (menuItems) {
         displayMenu(menuItems);
     } else {
-        console.error("fetchMenu: Failed to fetch menu data from /api/get-menu.");
-        // You could display a minimal fallback menu here if needed
+        console.error("fetchMenu: Failed to fetch menu data.");
     }
 }
 
 async function fetchFooterInfo() {
     console.log("fetchFooterInfo: Fetching footer info from API.");
     // This now fetches from your new API endpoint
-    const footerInfo = await fetchData('/api/admin/footer_info');
+    const footerInfo = await fetchData('/api/content-handler?action=footer_info');
     if (footerInfo) {
         displayFooter(footerInfo);
     } else {
-        console.error("fetchFooterInfo: Failed to fetch footer data from /api/admin/footer_info.");
+        console.error("fetchFooterInfo: Failed to fetch footer data from /api/content-handler?action=footer_info.");
     }
 }
 
-
+// In app.js, replace the entire function// In app.js, replace the entire function
+// FILE: app.js
+// Replace your old fetchCustomHamperItems function with this new version.
 
 async function fetchCustomHamperItems() {
     console.log("fetchCustomHamperItems: Fetching components from backend API.");
     // This now fetches from our new Vercel serverless function instead of the local JSON file.
-    const customHamperData = await fetchData('/api/custom-hamper-components');
+    const customHamperData = await fetchData('/api/product-handler?action=components');
 
     if (customHamperData && !customHamperData.error) {
         customHamperItems = customHamperData.map(item => {
@@ -1371,17 +1365,18 @@ async function fetchCustomHamperItems() {
 }
 
 async function fetchFeatures() {
-    console.log("fetchFeatures: Fetching features data from API.");
-    // This now fetches from your new API endpoint
-    const features = await fetchData('/api/admin/features');
-    if (features) {
-        displayFeatures(features);
-    } else {
-        console.error("fetchFeatures: Failed to fetch features from /api/admin/features.");
-    }
+    console.log("fetchFeatures: Fetching features data.");
+    // Updated to use content-handler
+    const features = await fetchData('/api/content-handler?action=features');
+    if (features) displayFeatures(features);
 }
 
-
+async function fetchTestimonials() {
+    console.log("fetchTestimonials: Fetching testimonials data.");
+    // Updated to use the merged content-handler
+    const testimonials = await fetchData('/api/content-handler?action=testimonials');
+    if (testimonials) displayTestimonials(testimonials);
+}
 
 // ---------------------------------------------------------------- //
 // -------------------- KIT: FOOTER ------------------------------- //
@@ -1479,7 +1474,6 @@ function showBestsellersAsHomepage() {
     updateProductView();
 }
 
-
 async function updateProductView() {
     const searchTerm = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
     const priceFilterValue = document.getElementById('filter-select')?.value || 'all';
@@ -1512,32 +1506,20 @@ async function updateProductView() {
         if (currentTagFilter) {
             productsToDisplay = productsToDisplay.filter(p => p.tag === currentTagFilter);
             currentTitle = currentTagFilter === 'BESTSELLER' ? 'Bestsellers' : 'Special Sale Items';
-        
-        // --- START OF CORRECTED LOGIC ---
-        } else if (currentCategoryFilter && currentCategoryFilter !== 'all' && currentCategoryFilter !== '__ALL_PRODUCTS_TRIGGER__') {
+        } 
+        // --- THIS IS THE CORRECTED LOGIC ---
+        else if (currentCategoryFilter && currentCategoryFilter !== 'all' && currentCategoryFilter !== '__ALL_PRODUCTS_TRIGGER__') {
             currentTitle = currentCategoryFilter;
+            // Loosen the filter to search within text instead of requiring an exact category match.
+            // This also removes the trailing 's' to match singular words (e.g., "Hampers" -> "hamper").
+            const simplifiedFilter = currentCategoryFilter.replace(/s$/, '').toLowerCase();
             
-            // This is the filter, e.g., "birthday hamper"
-            const simplifiedFilter = currentCategoryFilter.replace(/s$/, '').toLowerCase(); 
-            
-            productsToDisplay = productsToDisplay.filter(p => {
-                const titleMatch = (p.title && p.title.toLowerCase().includes(simplifiedFilter));
-                
-                let categoryMatch = false;
-                if (p.category) {
-                    // Split the product's category string "Gifts, Hampers, Food" into an array
-                    const productCategories = p.category.split(',')
-                        .map(cat => cat.trim().replace(/s$/, '').toLowerCase()); // Simplify each category
-                    
-                    // Check if *any* of the product's categories match the filter
-                    categoryMatch = productCategories.includes(simplifiedFilter);
-                }
-                
-                return titleMatch || categoryMatch;
-            });
-        // --- END OF CORRECTED LOGIC ---
-            
+            productsToDisplay = productsToDisplay.filter(p => 
+                (p.title && p.title.toLowerCase().includes(simplifiedFilter)) || 
+                (p.category && p.category.toLowerCase().includes(simplifiedFilter))
+            );
         }
+        // --- END OF CORRECTION ---
 
         if (priceFilterValue.startsWith('price-')) {
             const range = priceFilterValue.replace('price-', '').split('-');
@@ -1851,7 +1833,13 @@ function setupImageZoom(container) {
     }
 }
 
+// In app.js, replace your existing showProductDetail function with this one.
 
+// FILE: public/app.js
+
+// --- REPLACE the entire showProductDetail function with this one ---
+// Replace your entire existing showProductDetail function
+// Replace your entire existing showProductDetail function
 async function showProductDetail(slug) {
     // This corrected line normalizes BOTH slugs for a reliable match.
     const product = allProducts.find(p => createSlug(p.slug) === createSlug(slug));
@@ -1993,7 +1981,9 @@ function displayTestimonials(testimonials) {
 // -------------------- KIT: MENU & NAVIGATION -------------------- //
 // ----------------------------------------------------------------- //
 
+// REPLACE this entire function in app.js
 
+// REPLACE this entire function in app.js
 
 function renderWishlistPage() {
     const wishlistedIds = wishlist.getAllItemIds();
@@ -2119,7 +2109,9 @@ function closeMobileMenu() {
     mobileNavOverlay.classList.remove('active');
 }
 
+// REPLACE this function in your public/app.js file
 
+// In app.js
 
 function updateHeaderIcons() {
     if (!headerIconsContainer) {
@@ -2134,7 +2126,8 @@ function updateHeaderIcons() {
         displayName = fullName ? fullName.split(' ')[0] : 'Account';
     }
 
-    
+    // --- THIS IS THE FIX ---
+    // The account icon is now wrapped in a proper router link
     headerIconsContainer.innerHTML = `
         <a href="/#/account" class="account-link-wrapper" aria-label="My Account">
             <div class="account-icon-wrapper">
@@ -2195,76 +2188,69 @@ function hideConfirmationModal() {
 
 
 // 1. The main function, now acting as a router
-async function fetchAndDisplayStaticPage(slug) {
-    console.log("Fetching static/dynamic page for slug:", slug);
+async function fetchAndDisplayStaticPage(pageName) {
+    console.log("Fetching static page:", pageName);
     let pageContent;
     let endpoint = '';
-    let finalSlug = slug;
 
-    // 1. Handle old underscore-style URLs
-    if (finalSlug.includes('_')) {
-        finalSlug = finalSlug.replace(/_/g, '-');
-        console.log(`Redirecting old slug '${slug}' to new slug '${finalSlug}'`);
-        router.navigate(`/${finalSlug}`); // Update URL and re-trigger routing
-        return;
-    }
-
-    // 2. Route to the correct API endpoint
-    switch(finalSlug) {
-        case 'contact-us':
-            endpoint = '/api/admin/contact_us';
+    // Route to the new Content Handler
+    switch(pageName) {
+        case 'about_us':
+            endpoint = '/api/content-handler?action=about_us';
             break;
-        case 'faqs':
-            endpoint = '/api/admin/faqs';
+        case 'our_mission':
+            endpoint = '/api/content-handler?action=our_mission';
             break;
-        case 'delivery-info':
-            endpoint = '/api/admin/delivery_info';
+        case 'privacy_policy':
+            endpoint = '/api/content-handler?action=privacy_policy';
+            break;
+        case 'terms_and_conditions':
+            endpoint = '/api/content-handler?action=terms_and_conditions';
+            break;
+        case 'contact_us':
+            endpoint = '/api/content-handler?action=contact_us';
+            break;
+        case 'faqs': 
+            endpoint = '/api/content-handler?action=faqs';
+            break;
+        case 'delivery_info': 
+            endpoint = '/api/content-handler?action=delivery_info';
             break;
         default:
-            // This is a dynamic page from the Page Manager
-            endpoint = `/api/public/page?slug=${finalSlug}`;
+            // Dynamic pages now go through the content handler too
+            endpoint = `/api/content-handler?action=pages&slug=${pageName}`;
             break;
     }
 
-    // 3. Fetch the content
     try {
         pageContent = await fetchData(endpoint);
+        console.log(`[fetchAndDisplayStaticPage] Raw content for '${pageName}':`, pageContent);
         if (!pageContent) throw new Error(`No content received from ${endpoint}`);
     } catch (error) {
-         console.error(`Error fetching content for ${finalSlug} from ${endpoint}:`, error);
+         console.error(`Error fetching content for ${pageName}:`, error);
         pageContent = null;
     }
 
-    // 4. Route to the correct renderer
     if (pageContent) {
-        // --- Special Page Renderers ---
-        if (finalSlug === 'contact-us' && pageContent.pageTitle) {
+        if (pageName === 'faqs') {
+            renderFaqPage(pageContent);
+        } else if (pageName === 'delivery_info') {
+            renderDeliveryInfoPage(pageContent);
+        } else if (pageName === 'contact_us') {
              renderContactPage(pageContent);
-        
-        // --- THIS IS THE FIX ---
-        } else if (finalSlug === 'faqs' && pageContent.pageTitle && Array.isArray(pageContent.categories)) {
-             renderFaqPage(pageContent); // This now correctly matches the new data structure
-        // --- END OF FIX ---
-
-        } else if (finalSlug === 'delivery-info' && pageContent.pageTitle && Array.isArray(pageContent.sections)) {
-             renderDeliveryInfoPage(pageContent);
-        
-        // --- Generic Page Manager Renderer ---
-        } else if (pageContent.slug && pageContent.title) {
-             renderGenericStaticPage(pageContent, finalSlug, pageContent.title);
-        
-        // --- Error ---
+        } else if (pageContent.pageTitle || pageContent.title) {
+             // Handle generic pages (About Us, Mission, Privacy, Terms, Dynamic)
+             renderGenericStaticPage(pageContent, pageName, pageContent.pageTitle || pageContent.title);
         } else {
-            console.error(`Content structure for '${finalSlug}' from ${endpoint} is unexpected.`);
-            pageStatic.innerHTML = `<div class="static-content-container"><h2>Error</h2><p>Could not display content due to unexpected format.</p></div>`;
+            pageStatic.innerHTML = `<div class="static-content-container"><h2>Error</h2><p>Unexpected content format.</p></div>`;
             showPage('static');
         }
     } else {
-        // Render page not found
-        pageStatic.innerHTML = `<div class="static-content-container"><h2>Page Not Found</h2><p>The page you were looking for ('/${finalSlug}') could not be found.</p></div>`;
+        pageStatic.innerHTML = `<div class="static-content-container"><h2>Page Not Found</h2><p>The content for '${pageName}' could not be loaded.</p></div>`;
         showPage('static');
     }
 }
+
 // REPLACE this function
 function renderGenericStaticPage(pageData, pageName, titleOverride = null) {
     // Determine the main title (use override if available)
@@ -2347,57 +2333,17 @@ function renderContactPage(data) {
     showPage('static');
 }
 // 3. Add this new function specifically for rendering the FAQs page
-function renderFaqPage(pageData) {
-    // pageData is now an object: { pageTitle: "...", categories: [...] }
-    const pageTitle = pageData.pageTitle || "Frequently Asked Questions";
-    const categories = pageData.categories || [];
-
-    // 1. Build the category "Table of Contents"
-    const categoryLinksHtml = categories.map(category => `
-        <li>
-            <a href="#faq-category-${category.title.replace(/\s+/g, '-')}" class="faq-category-link">
-                ${category.title}
-            </a>
-        </li>
-    `).join('');
-
-    // 2. Build the full question & answer sections
-    const categorySectionsHtml = categories.map(category => {
-        const itemsHtml = category.items.map(item => `
-            <details class="faq-item">
-                <summary class="faq-question">${item.question}</summary>
-                <p class="faq-answer">${item.answer}</p>
-            </details>
-        `).join('');
-
-        return `
-            <section id="faq-category-${category.title.replace(/\s+/g, '-')}" class="faq-category-section">
-                <h3 class="faq-category-title">${category.title}</h3>
-                <div class="faq-list">
-                    ${itemsHtml}
-                </div>
-            </section>
-        `;
-    }).join('');
-
-    // 3. Assemble the final page
+function renderFaqPage(faqData) {
     pageStatic.innerHTML = `
         <div class="static-content-container">
-            <div class="page-header">
-                <h2>${pageTitle}</h2>
-                <button class="btn btn-secondary" id="back-to-home-btn">Back to Home</button>
-            </div>
-            
-            <div class="faq-categories-list">
-                <h4>Browse by Topic</h4>
-                <ul>${categoryLinksHtml}</ul>
-            </div>
-
-            <div class="faq-content-body">
-                ${categorySectionsHtml}
+            <div class="page-header"><h2>Frequently Asked Questions</h2><button class="btn btn-secondary" id="back-to-home-btn">Back to Home</button></div>
+            <div class="faq-list">${faqData.map(item => `
+                <details class="faq-item">
+                    <summary class="faq-question">${item.question}</summary>
+                    <p class="faq-answer">${item.answer}</p>
+                </details>`).join('')}
             </div>
         </div>`;
-
     pageStatic.querySelector('#back-to-home-btn').addEventListener('click', showAllProducts);
     showPage('static');
 }
@@ -2414,12 +2360,12 @@ function renderDeliveryInfoPage(deliveryData) {
     const sectionsHtml = (Array.isArray(deliveryData.sections) && deliveryData.sections.length > 0)
         ? deliveryData.sections.map(item => `
                 <div class="delivery-section mb-8 flex items-start space-x-4">
-                    <div class="mt-1 w-8 text-center flex-shrink-0"> 
-                        <i class="${getDeliveryIconClass(item.iconName)} text-blue-600 text-2xl"></i> 
+                    <div class="mt-1 w-8 text-center flex-shrink-0"> {/* Icon container */}
+                        <i class="${getDeliveryIconClass(item.iconName)} text-blue-600 text-2xl"></i> {/* Use helper */}
                     </div>
                     <div> 
                         <h3 class="font-semibold text-lg mb-1 text-gray-800">${item.title || 'Untitled Section'}</h3>
-                        <p class="text-gray-700 leading-relaxed" style="white-space: pre-wrap;">${item.content || ''}</p> 
+                        <p class="text-gray-700 leading-relaxed" style="white-space: pre-wrap;">${item.content || ''}</p> {/* Style content */}
                     </div>
                 </div>`).join('')
         : '<p class="text-gray-500">Delivery information is currently unavailable.</p>'; // Fallback message
@@ -2463,6 +2409,13 @@ function getDeliveryIconClass(iconName = '') {
 // -------------------- KIT: AUTHENTICATION -------------------- //
 // ----------------------------------------------------------------- //
 
+// REPLACE this entire function in app.js
+
+// REPLACE this entire function in app.js
+
+// REPLACE the renderLoginPage function in your app.js file with this CORRECT version.
+
+// REPLACE your entire renderLoginPage function with this one
 function renderLoginPage() {
 
     // Before rendering anything, check if the user is already logged in.
@@ -2674,6 +2627,9 @@ function renderRegisterPage() {
 // -------------------- KIT: CART & CHECKOUT ------------------------ //
 // ------------------------------------------------------------------ //
 
+// FILE: public/app.js
+
+// --- Replace the existing validateField function with this upgraded version ---
 function validateField(inputElement) {
     if (!inputElement) return false;
 
@@ -2902,7 +2858,7 @@ async function saveCart() {
     // 5. Sync to backend (no change here)
     if (auth.isLoggedIn()) {
         try {
-            await fetchWithAuth('/api/cart', {
+            await fetchWithAuth('/api/user-handler?action=cart', {
                 method: 'POST',
                 body: JSON.stringify({ cart: cart })
             });
@@ -3048,20 +3004,21 @@ function updateCart() {
 function openCart() { sideCart.classList.add('active'); cartOverlay.classList.add('active'); }
 function closeCart() { sideCart.classList.remove('active'); cartOverlay.classList.remove('active'); }
 
+// FILE: public/app.js
 
+// Replace the existing renderCartItems function with this final merged version
 function renderCartItems() {
-    // 1. Handle empty cart/checkout button state
     goToCheckoutBtn.disabled = cart.length === 0;
     if (cart.length === 0 && savedForLater.length === 0) {
         cartItemsContainer.innerHTML = '<p>Your basket is empty.</p>';
         goToCheckoutBtn.disabled = true;
         return;
     }
+    
+    goToCheckoutBtn.disabled = cart.length === 0;
 
-    // 2. Generate HTML for Active Cart Items
     const activeCartHtml = cart.map(item => {
         if (item.isCustom) {
-            // ... Logic for Custom Hampers ...
             const componentsHtml = item.contents.map(component => `
                 <li class="component-item">
                     <span class="component-name">&#8226; ${component.name}</span>
@@ -3084,7 +3041,9 @@ function renderCartItems() {
                     </div>
                     <div class="custom-hamper-details">
                         <p class="includes-title">Includes:</p>
-                        <ul class="component-list">${componentsHtml}</ul>
+                        <ul class="component-list">
+                            ${componentsHtml}
+                        </ul>
                     </div>
                     <div class="custom-hamper-footer">
                         <div class="quantity-selector">
@@ -3100,9 +3059,10 @@ function renderCartItems() {
                         </div>
                         <span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span>
                     </div>
-                </div>`;
-        } else {
-            // ... Logic for Standard Products ...
+                </div>
+            `;
+        }
+        else {
             const primaryImageUrl = getProductImageUrls(item)[0];
             return `
                 <div class="cart-item">
@@ -3124,11 +3084,7 @@ function renderCartItems() {
         }
     }).join('');
 
-    // 3. Generate HTML for Saved For Later Items (THE FIX IS HERE)
-    // We use 'luxuryHampersSaved' to match the key used in loadSavedForLater()
-    window.savedForLater = JSON.parse(localStorage.getItem('luxuryHampersSaved')) || [];
-
-    const savedItemsHTML = window.savedForLater.map(item => {
+    const savedForLaterHtml = savedForLater.map(item => {
         const primaryImageUrl = getProductImageUrls(item)[0];
         return `
             <div class="cart-item saved-item">
@@ -3138,22 +3094,21 @@ function renderCartItems() {
                     <p class="cart-item-price">£${item.price.toFixed(2)}</p>
                 </div>
                 <div class="cart-item-actions">
-                      <button class="cart-item-remove-btn" data-id="${item.id}">Remove</button>
-                      <button class="cart-item-action-link move-to-basket-btn" data-id="${item.id}">Move to basket</button>
+                     <button class="cart-item-remove-btn" data-id="${item.id}">Remove</button>
+                     <button class="cart-item-action-link move-to-basket-btn" data-id="${item.id}">Move to basket</button>
                 </div>
             </div>`;
     }).join('');
 
-    // 4. Inject both sections into the DOM
     cartItemsContainer.innerHTML = `
         <div id="active-cart-items">
             ${cart.length > 0 ? activeCartHtml : '<p>Your basket is empty.</p>'}
         </div>
-        ${window.savedForLater.length > 0 ? `
+        ${savedForLater.length > 0 ? `
             <div class="saved-for-later-container">
                 <h3>Saved for Later</h3>
                 <div id="saved-items-list">
-                    ${savedItemsHTML} 
+                    ${savedForLaterHtml}
                 </div>
             </div>
         ` : ''}
@@ -3195,7 +3150,7 @@ function updateCartTotals() {
         if (discountRow && discountAmountEl) {
             if (appliedDiscount) {
                 discountRow.style.display = 'flex';
-                discountAmountEl.textContent = `- ${formatCurrency(discountApplied)}`;
+                ddiscountAmountEl.textContent = `- ${formatCurrency(discountApplied)}`;
                 // Add the code and remove button
                 if (discountInfoEl) {
                     discountInfoEl.innerHTML = ` (<span class="discount-code-display">${discountCode}</span> <button class="remove-discount-btn" data-source="${prefix}" title="Remove discount">✕</button>)`;
@@ -3289,19 +3244,6 @@ function displayCheckoutPage() {
         router.navigate('/');
         return;
     }
-    // Check if a store credit is applied.
-   // const isStoreCreditApplied = appliedDiscount && appliedDiscount.type === 'store_credit';
-    
-    // Check if the virtual gift card item is in the cart.
-    //const giftCardInCart = cart.some(item => item.id === 'GIFT-CARD');
-
-    // If no store credit is applied, but the gift card is in the cart, remove it.
-   // if (!isStoreCreditApplied && giftCardInCart) {
-      //  console.log("displayCheckoutPage: Stale E-Gift Card found. Removing from cart.");
-       // cart = cart.filter(item => item.id !== 'GIFT-CARD');
-        // We must now recalculate totals and update the cart.
-      //  updateCart(); 
-   // }
     const isLoggedIn = auth.isLoggedIn();
 
     if (isLoggedIn && checkoutStep === 1 && userAddresses.length > 0 && !selectedCheckoutAddressId) {
@@ -3407,7 +3349,7 @@ function displayCheckoutPage() {
                 <div class="summary-container">
                     <div class="summary-row"><span>Subtotal</span><span id="checkout-subtotal">£0.00</span></div>
                     <div class="summary-row discount-row" style="display: none;">
-                        <span>Discount<span id="checkout-discount-info" style="display: none;"></span></span> 
+                        <span>Discount<span id="checkout-discount-info" style="display: none;"></span></span> {/* <-- CORRECTED SPAN HERE */}
                         <span id="checkout-discount">£0.00</span>
                     </div>
                     <div class="summary-row"><span>Delivery</span><span id="checkout-delivery">£0.00</span></div>
@@ -3526,7 +3468,7 @@ const handleAddressSearch = debounce(async () => {
     }
 
     try {
-        const response = await fetch(`/api/address-autocomplete?term=${encodeURIComponent(term)}`);
+        const response = await fetch(`→ /api/user-handler?action=address_autocomplete&term=${encodeURIComponent(term)}`);
         const suggestions = await response.json();
         
         if (!response.ok) throw new Error(suggestions.error || 'Could not fetch suggestions.');
@@ -3548,11 +3490,6 @@ const handleAddressSearch = debounce(async () => {
 
 
 function removeDiscount() {
-    // Check if the discount being removed was a store credit
-    //if (appliedDiscount && appliedDiscount.type === 'store_credit') {
-        // Also remove the "E-Gift Card" virtual product from the cart
-       // cart = cart.filter(item => item.id !== 'GIFT-CARD');
-    //}
     appliedDiscount = null;
     // Clear any lingering messages
     const cartMsg = document.getElementById('cart-discount-message');
@@ -3561,7 +3498,6 @@ function removeDiscount() {
     if (checkoutMsg) { checkoutMsg.textContent = ''; checkoutMsg.className = 'discount-message'; }
     updateCartTotals(); // Update UI everywhere
 }
-
 
 async function placeOrder() {
     const placeOrderBtn = document.getElementById('place-order-btn');
@@ -3632,7 +3568,7 @@ async function placeOrder() {
             appliedDiscount: appliedDiscount || null
         };
 
-        const result = await fetchWithAuth('/api/create-order', {
+        const result = await fetchWithAuth('/api/orders-handler?action=create', {
             method: 'POST', body: JSON.stringify({ orderPayload })
         });
 
@@ -3663,7 +3599,7 @@ async function placeOrder() {
 // Add this entire new function to app.js
 function calculateTotals() {
     // CRITICAL FIX: Read dynamic settings from the global object
-    const settings = window.appSettings || {}; // Use settings or empty object
+    const settings = window.appSettings || {}; 
 
     const itemsSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -3673,10 +3609,14 @@ function calculateTotals() {
     // Use fetched settings or safe defaults
     const freeDeliveryThreshold = settings.freeDeliveryThreshold ?? 50;
     const baseCharge = settings.baseDeliveryCharge ?? 4.99;
+    const additionalItemCharge = settings.additionalItemCharge ?? 1.00; // Assuming this might be a future setting
 
-    // Simplified delivery logic based on site settings
     if (totalItems > 0 && itemsSubtotal < freeDeliveryThreshold) {
         deliveryChargeApplied = baseCharge;
+        if (totalItems > 1) {
+            // Keep the assumption for additional item charge if present in your logic
+            deliveryChargeApplied += (totalItems - 1) * additionalItemCharge;
+        }
     }
 
     const chargeableTotal = itemsSubtotal + deliveryChargeApplied;
@@ -3697,7 +3637,7 @@ function calculateTotals() {
 
     discountApplied = Math.min(chargeableTotal, discountApplied);
     const totalAmount = chargeableTotal - discountApplied;
-
+    
     return { itemsSubtotal, deliveryChargeApplied, discountApplied, totalAmount };
 }
 
@@ -3735,7 +3675,7 @@ async function placeGuestOrder() {
             appliedDiscount: appliedDiscount || null // Pass discount for guests too
         };
 
-        const response = await fetch('/api/create-guest-order', {
+        const response = await fetch('/api/orders-handler?action=create_guest', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ orderPayload })
         });
@@ -3777,7 +3717,7 @@ async function selectAddressSuggestion(id) {
     errorEl.textContent = '';
 
     try {
-        const response = await fetch(`/api/get-address-by-id?id=${id}`);
+        const response = await fetch(`/api/user-handler?action=get_address_by_id&id=${id}`);
         const address = await response.json();
         if (!response.ok) throw new Error(address.error);
 
@@ -4004,7 +3944,7 @@ function showReturnRequestPage(order) {
         const returnRequestPayload = { orderId: order.id, reason, items: selectedItems, refundAmount, desiredOutcome };
 
         try {
-            await fetchWithAuth('/api/returns', { method: 'POST', body: JSON.stringify({ returnRequest: returnRequestPayload }) });
+            await fetchWithAuth('→ /api/user-handler?action=returns', { method: 'POST', body: JSON.stringify({ returnRequest: returnRequestPayload }) });
             await fetchInitialUserData();
             router.navigate('/account/returns');
             showConfirmationModal(`Your return request has been submitted.`);
@@ -4224,18 +4164,18 @@ async function handleRedeemCredit(e) {
 
     try {
         // Use your existing validation API
-        const response = await fetch(`/api/validate-discount?code=${code}`);
+        const response = await fetch(`/api/user-handler?action=validate_discount&code=${code}`);
         const result = await response.json();
 
         if (!response.ok) throw new Error(result.error);
 
         if (result.type === 'store_credit' && result.value > 0) {
             // This is the "virtual product" ID from Firestore
-           // const GIFT_CARD_PRODUCT_ID = 'GIFT-CARD';
-           // const balance = Math.floor(result.value); // Use whole pounds
+            const GIFT_CARD_PRODUCT_ID = 'GIFT-CARD';
+            const balance = Math.floor(result.value); // Use whole pounds
 
             if (balance > 0) {
-                //addToCart(GIFT_CARD_PRODUCT_ID, balance);
+                addToCart(GIFT_CARD_PRODUCT_ID, balance);
                 messageEl.className = 'discount-message success';
                 messageEl.textContent = `Success! £${balance}.00 in credit has been added to your basket.`;
                 openCart(); // Show the user their cart
@@ -4371,7 +4311,7 @@ async function renderMyOrdersPage() {
     try {
         console.log("[renderMyOrdersPage] Attempting to refresh orders via fetchWithAuth...");
          // Use the no-cache option to ensure fresh data
-        userOrders = await fetchWithAuth('/api/get-orders', { cache: 'no-cache' });
+        userOrders = await fetchWithAuth('/api/orders-handler?action=get_orders', { cache: 'no-cache' });
         console.log("[renderMyOrdersPage] Orders refreshed successfully.");
     } catch (error) {
          // Log the error from fetchWithAuth, which already includes "User not logged in" if that's the cause
@@ -4655,7 +4595,7 @@ async function renderOrderDetailPage(orderId) {
         cancelLink.addEventListener('click', (e) => { e.preventDefault(); cancelLink.style.display = 'none'; activateCancellationMode(order); }, { once: true });
     }
 
-    const returnWindow = window.appSettings?.returnWindowInDays ?? 28;
+    const returnWindow = appConfig?.returns?.returnWindowInDays ?? 28;
     const daysSinceOrder = (new Date() - orderDateObj) / (1000 * 3600 * 24);
     const hasReturnableItems = order.items && order.items.some(orderItem => {
         const returnedQty = userReturns
@@ -4677,7 +4617,30 @@ async function renderOrderDetailPage(orderId) {
     }
 }
 
+function activateCancellationMode(order) {
+    const itemsContainer = document.querySelector('#page-order-detail .order-detail-items');
+    if (!itemsContainer) return;
+    const itemsWithCheckboxesHtml = order.items.map(item => {
+        const product = allProducts.find(p => p.id === item.productId);
+        const imageUrl = item.isCustom ? 'assets/images/custom_hamper_placeholder.jpg' : (product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A');
+        const checkboxHtml = order.items.length > 1 ? `<div class="cancellation-control"><input type="checkbox" name="cancel-item" value="${item.productId}" data-quantity="${item.quantity}"></div>` : '';
+        return `<div class="order-summary-item">${checkboxHtml}<img src="${imageUrl}" alt="${item.title}" class="cart-item-image"><div class="cart-item-info"><p class="cart-item-title">${item.title}</p><p>Qty: ${item.quantity}</p></div><span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span></div>`;
+    }).join('');
+    itemsContainer.innerHTML = `<form id="cancel-order-form"><p class="cancellation-prompt">Select items below to request a cancellation.</p>${itemsWithCheckboxesHtml}<div class="cancellation-actions"><button type="submit" id="cancel-selected-btn" class="btn btn-primary btn-sm">Cancel Selected Items</button><button type="button" id="cancel-full-order-btn" class="btn btn-danger btn-sm">Cancel Entire Order</button></div></form>`;
+    const cancelSelectedBtn = document.getElementById('cancel-selected-btn');
+    const cancelFullOrderBtn = document.getElementById('cancel-full-order-btn');
+    const returnLink = document.getElementById('show-return-form-btn');
+    const allCheckboxes = itemsContainer.querySelectorAll('input[name="cancel-item"]');
+    if (order.items.length === 1) { if (cancelSelectedBtn) cancelSelectedBtn.style.display = 'none'; }
+    const handleReturnLinkVisibility = () => { if (!returnLink) return; const allChecked = Array.from(allCheckboxes).every(cb => cb.checked); returnLink.style.display = allChecked ? 'none' : ''; };
+    allCheckboxes.forEach(checkbox => checkbox.addEventListener('input', handleReturnLinkVisibility));
+    if (cancelFullOrderBtn) { cancelFullOrderBtn.addEventListener('click', () => { if (returnLink) returnLink.style.display = 'none'; handleOrderCancellation(order.id, 'full'); }); }
+    document.getElementById('cancel-order-form').addEventListener('submit', (e) => { e.preventDefault(); handleOrderCancellation(order.id, 'partial'); });
+}
 
+// In app.js, REPLACE the activateCancellationMode helper function
+
+// In app.js, REPLACE the activateCancellationMode helper function
 
 function activateCancellationMode(order) {
     const itemsContainer = document.querySelector('#page-order-detail .order-detail-items');
@@ -4822,18 +4785,18 @@ async function handleSaveAddress(e) {
 
     try {
         if (isEditing) {
-            await fetchWithAuth('/api/addresses', {
+            await fetchWithAuth('/api/user-handler?action=addresses', {
                 method: 'PUT',
                 body: JSON.stringify({ addressId, ...newAddressData })
             });
         } else {
-            await fetchWithAuth('/api/addresses', {
+            await fetchWithAuth('/api/user-handler?action=addresses', {
                 method: 'POST',
                 body: JSON.stringify(newAddressData)
             });
         }
         
-        userAddresses = await fetchWithAuth('/api/addresses');
+        userAddresses = await fetchWithAuth('/api/user-handler?action=addresses');
         
         if (addressFormReturnPath === 'checkout') {
             const savedAddress = userAddresses.find(addr => addr.fullName === newAddressData.fullName && addr.addressLine1 === newAddressData.addressLine1);
@@ -5374,8 +5337,8 @@ async function handleReviewSubmit(e, orderId) {
     // --- End Validation Check ---
 
     try {
-        console.log("[handleReviewSubmit] Calling fetchWithAuth('/api/submit-review')...");
-        const response = await fetchWithAuth('/api/submit-review', {
+        console.log("[handleReviewSubmit] Calling fetchWithAuth('/api/user-handler?action=submit_review')...");
+        const response = await fetchWithAuth('/api/user-handler?action=submit_review', {
             method: 'POST',
             body: JSON.stringify({ orderId: orderId, reviews: reviews })
         });
@@ -5413,15 +5376,17 @@ async function handleReviewSubmit(e, orderId) {
 async function fetchSiteSettings() {
     console.log("fetchSiteSettings: Fetching site configuration from CMS.");
     try {
-        // Try to get settings from the server
-        const response = await fetch('/api/admin/site_settings'); 
+        // Use a simple fetch, as the public site does not need admin authentication
+        const response = await fetch('/api/content-handler?action=site_settings'); 
         if (!response.ok) throw new Error('Could not fetch site settings.');
         
         const settingsData = await response.json();
-        window.appSettings = settingsData; 
-        applyCssVariables(settingsData); // Apply server settings
         
-        // Update threshold display
+        // Update the global settings variable
+        window.appSettings = settingsData; 
+        
+        // Apply CSS variables immediately for colors and fonts
+        applyCssVariables(settingsData); 
         const thresholdEl = document.getElementById('top-bar-threshold');
         if (thresholdEl) {
             const symbol = settingsData.baseCurrencySymbol || '£';
@@ -5429,25 +5394,14 @@ async function fetchSiteSettings() {
             thresholdEl.textContent = `${symbol}${threshold}`;
         }
         console.log("Site settings loaded and applied.");
-
     } catch (error) {
         console.error("Error fetching site settings. Using defaults:", error);
-        
-        // --- THE FIX IS HERE ---
-        // Define defaults AND apply them immediately
-        const defaults = {
+        // Fallback to defaults if the API call fails
+        window.appSettings = {
             freeDeliveryThreshold: 50,
             baseDeliveryCharge: 4.99,
-            primaryColor: '#000000',      // Default Black
-            ctaColorGreen: '#28a745',     // Default Green
-            fontFamilyHeadings: 'serif',
-            fontFamilyBody: 'sans-serif',
-            baseCurrencySymbol: '£'
+            // Add other defaults as necessary
         };
-        
-        window.appSettings = defaults;
-        applyCssVariables(defaults); // <--- This forces the colors to show up!
-        // -----------------------
     }
 }
 function formatCurrency(amount) {
@@ -5492,29 +5446,11 @@ function handleNewsletterSubmit(e) {
     const emailInput = document.getElementById('newsletter-email-modal');
     if (emailInput) {
         const email = emailInput.value;
-
-        // Use an async function to call the API
-        (async () => {
-            try {
-                const response = await fetch('/api/subscribe', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: email })
-                });
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error);
-
-                showConfirmationModal(`Thank you for subscribing!`);
-                closeNewsletterPopup();
-                document.getElementById('newsletter-form-modal').reset();
-            } catch (error) {
-                showConfirmationModal(`Error: ${error.message}`);
-                // Don't close the popup on error, so they can try again.
-            }
-        })();
+        showConfirmationModal(`Thank you for subscribing, ${email}! (This is a demo).`);
+        closeNewsletterPopup();
+        document.getElementById('newsletter-form-modal').reset();
     }
 }
-
 function displayCookieConsent() {
     const message = window.appSettings?.cookieConsentMessage || 'We use cookies to ensure you get the best experience on our website.';
     const hasConsented = localStorage.getItem('cookieConsent') === 'granted';
@@ -5549,39 +5485,3 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
-async function fetchTestimonials() {
-    console.log("fetchTestimonials: Fetching testimonials data from API.");
-    // This now fetches from your new API endpoint
-    const testimonials = await fetchData('/api/admin/testimonials');
-    if (testimonials) {
-        displayTestimonials(testimonials);
-    } else {
-        console.error("fetchTestimonials: Failed to fetch testimonials from /api/admin/testimonials.");
-    }
-}
-// FILE: public/app.js
-
-// REPLACE this function
-async function fetchOccasions() {
-    console.log("fetchOccasions: Fetching occasions data from API.");
-    // This now fetches from your new API endpoint
-    const occasions = await fetchData('/api/admin/occasions');
-    if (occasions) {
-        displayOccasions(occasions);
-    } else {
-        console.error("fetchOccasions: Failed to fetch occasions from /api/admin/occasions.");
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
