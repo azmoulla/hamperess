@@ -2,7 +2,7 @@
 // This file replaces the localStorage-based authentication with a secure,
 // live connection to Firebase Authentication.
 
-const auth = (() => {
+window.auth = (() => {
 
 
 
@@ -268,3 +268,4 @@ async register(name, email, password) {
     };
 
 })();
+
