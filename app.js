@@ -3004,9 +3004,6 @@ function updateCart() {
 function openCart() { sideCart.classList.add('active'); cartOverlay.classList.add('active'); }
 function closeCart() { sideCart.classList.remove('active'); cartOverlay.classList.remove('active'); }
 
-// FILE: public/app.js
-
-// Replace the existing renderCartItems function with this final merged version
 function renderCartItems() {
     // 1. Safe retrieval of savedForLater (Handles "undefined" crash)
     let savedForLaterList = [];
@@ -3137,58 +3134,6 @@ function renderCartItems() {
             ` : ''}
         `;
     }
-}
-        else {
-            const primaryImageUrl = getProductImageUrls(item)[0];
-            return `
-                <div class="cart-item">
-                    <img src="${primaryImageUrl}" alt="${item.title}" class="cart-item-image">
-                    <div class="cart-item-info">
-                        <p class="cart-item-title">${item.title}</p>
-                        <p class="cart-item-price">£${item.price.toFixed(2)}</p>
-                        <div class="quantity-selector">
-                            <button class="quantity-btn decrease-qty" data-id="${item.id}">-</button>
-                            <span class="quantity-value">${item.quantity}</span>
-                            <button class="quantity-btn increase-qty" data-id="${item.id}">+</button>
-                        </div>
-                    </div>
-                    <div class="cart-item-actions">
-                        <button class="cart-item-remove-btn" data-id="${item.id}">Remove</button>
-                        <button class="cart-item-action-link save-for-later-btn" data-id="${item.id}">Save for later</button>
-                    </div>
-                </div>`;
-        }
-    }).join('');
-    const savedForLater = JSON.parse(localStorage.getItem('savedForLater')) || [];
-    const savedForLaterHtml = savedForLater.map(item => {
-        const primaryImageUrl = getProductImageUrls(item)[0];
-        return `
-            <div class="cart-item saved-item">
-                <img src="${primaryImageUrl}" alt="${item.title}" class="cart-item-image">
-                <div class="cart-item-info">
-                    <p class="cart-item-title">${item.title}</p>
-                    <p class="cart-item-price">£${item.price.toFixed(2)}</p>
-                </div>
-                <div class="cart-item-actions">
-                     <button class="cart-item-remove-btn" data-id="${item.id}">Remove</button>
-                     <button class="cart-item-action-link move-to-basket-btn" data-id="${item.id}">Move to basket</button>
-                </div>
-            </div>`;
-    }).join('');
-
-    cartItemsContainer.innerHTML = `
-        <div id="active-cart-items">
-            ${cart.length > 0 ? activeCartHtml : '<p>Your basket is empty.</p>'}
-        </div>
-        ${savedForLater.length > 0 ? `
-            <div class="saved-for-later-container">
-                <h3>Saved for Later</h3>
-                <div id="saved-items-list">
-                    ${savedForLaterHtml}
-                </div>
-            </div>
-        ` : ''}
-    `;
 }
 
 
@@ -5537,6 +5482,7 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
+
 
 
 
