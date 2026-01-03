@@ -3126,7 +3126,11 @@ function renderCartItems() {
         }
     }).join('');
 
-   window.savedForLater = JSON.parse(localStorage.getItem('savedForLater')) || [];
+  // 1. Get the data
+    window.savedForLater = JSON.parse(localStorage.getItem('savedForLater')) || [];
+
+    // 2. Generate the HTML (This line was missing!)
+    const savedItemsHTML = window.savedForLater.map(item => {
         const primaryImageUrl = getProductImageUrls(item)[0];
         return `
             <div class="cart-item saved-item">
@@ -3136,11 +3140,14 @@ function renderCartItems() {
                     <p class="cart-item-price">£${item.price.toFixed(2)}</p>
                 </div>
                 <div class="cart-item-actions">
-                     <button class="cart-item-remove-btn" data-id="${item.id}">Remove</button>
-                     <button class="cart-item-action-link move-to-basket-btn" data-id="${item.id}">Move to basket</button>
+                      <button class="cart-item-remove-btn" data-id="${item.id}">Remove</button>
+                      <button class="cart-item-action-link move-to-basket-btn" data-id="${item.id}">Move to basket</button>
                 </div>
             </div>`;
     }).join('');
+
+    // 3. IMPORTANT: You likely need to put this HTML into a container on the next line.
+    // Look for something like: document.querySelector('.saved-items-container').innerHTML = savedItemsHTML;
 
     cartItemsContainer.innerHTML = `
         <div id="active-cart-items">
@@ -5560,6 +5567,7 @@ async function fetchOccasions() {
         console.error("fetchOccasions: Failed to fetch occasions from /api/admin/occasions.");
     }
 }
+
 
 
 
