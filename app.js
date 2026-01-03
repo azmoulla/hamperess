@@ -3050,17 +3050,18 @@ function closeCart() { sideCart.classList.remove('active'); cartOverlay.classLis
 
 
 function renderCartItems() {
+    // 1. Handle empty cart/checkout button state
     goToCheckoutBtn.disabled = cart.length === 0;
     if (cart.length === 0 && savedForLater.length === 0) {
         cartItemsContainer.innerHTML = '<p>Your basket is empty.</p>';
         goToCheckoutBtn.disabled = true;
         return;
     }
-    
-    goToCheckoutBtn.disabled = cart.length === 0;
 
+    // 2. Generate HTML for Active Cart Items
     const activeCartHtml = cart.map(item => {
         if (item.isCustom) {
+            // ... Logic for Custom Hampers ...
             const componentsHtml = item.contents.map(component => `
                 <li class="component-item">
                     <span class="component-name">&#8226; ${component.name}</span>
@@ -3083,9 +3084,7 @@ function renderCartItems() {
                     </div>
                     <div class="custom-hamper-details">
                         <p class="includes-title">Includes:</p>
-                        <ul class="component-list">
-                            ${componentsHtml}
-                        </ul>
+                        <ul class="component-list">${componentsHtml}</ul>
                     </div>
                     <div class="custom-hamper-footer">
                         <div class="quantity-selector">
@@ -3101,10 +3100,9 @@ function renderCartItems() {
                         </div>
                         <span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span>
                     </div>
-                </div>
-            `;
-        }
-        else {
+                </div>`;
+        } else {
+            // ... Logic for Standard Products ...
             const primaryImageUrl = getProductImageUrls(item)[0];
             return `
                 <div class="cart-item">
@@ -3126,36 +3124,27 @@ function renderCartItems() {
         }
     }).join('');
 
-  // 1. Get the data
-  // 1. Define the global variable
-window.savedForLater = JSON.parse(localStorage.getItem('window.savedForLater')) || [];
+    // 3. Generate HTML for Saved For Later Items (THE FIX IS HERE)
+    // We use 'luxuryHampersSaved' to match the key used in loadSavedForLater()
+    window.savedForLater = JSON.parse(localStorage.getItem('luxuryHampersSaved')) || [];
 
-// 2. Generate the HTML safely
-const savedItemsHTML = window.savedForLater.map(item => {
-    const primaryImageUrl = getProductImageUrls(item)[0];
-    return `
-        <div class="cart-item saved-item">
-            <img src="${primaryImageUrl}" alt="${item.title}" class="cart-item-image">
-            <div class="cart-item-info">
-                <p class="cart-item-title">${item.title}</p>
-                <p class="cart-item-price">£${item.price.toFixed(2)}</p>
-            </div>
-            <div class="cart-item-actions">
-                  <button class="cart-item-remove-btn" data-id="${item.id}">Remove</button>
-                  <button class="cart-item-action-link move-to-basket-btn" data-id="${item.id}">Move to basket</button>
-            </div>
-        </div>`;
-}).join('');
+    const savedItemsHTML = window.savedForLater.map(item => {
+        const primaryImageUrl = getProductImageUrls(item)[0];
+        return `
+            <div class="cart-item saved-item">
+                <img src="${primaryImageUrl}" alt="${item.title}" class="cart-item-image">
+                <div class="cart-item-info">
+                    <p class="cart-item-title">${item.title}</p>
+                    <p class="cart-item-price">£${item.price.toFixed(2)}</p>
+                </div>
+                <div class="cart-item-actions">
+                      <button class="cart-item-remove-btn" data-id="${item.id}">Remove</button>
+                      <button class="cart-item-action-link move-to-basket-btn" data-id="${item.id}">Move to basket</button>
+                </div>
+            </div>`;
+    }).join('');
 
-// 3. Inject it into the page (if the container exists)
-const savedContainer = document.querySelector('.saved-for-later-container');
-if (savedContainer) {
-    savedContainer.innerHTML = savedItemsHTML;
-}
-
-    // 3. IMPORTANT: You likely need to put this HTML into a container on the next line.
-    // Look for something like: document.querySelector('.saved-items-container').innerHTML = savedItemsHTML;
-
+    // 4. Inject both sections into the DOM
     cartItemsContainer.innerHTML = `
         <div id="active-cart-items">
             ${cart.length > 0 ? activeCartHtml : '<p>Your basket is empty.</p>'}
@@ -3164,7 +3153,7 @@ if (savedContainer) {
             <div class="saved-for-later-container">
                 <h3>Saved for Later</h3>
                 <div id="saved-items-list">
-                    ${window.savedForLaterHtml}
+                    ${savedItemsHTML} 
                 </div>
             </div>
         ` : ''}
@@ -5574,6 +5563,7 @@ async function fetchOccasions() {
         console.error("fetchOccasions: Failed to fetch occasions from /api/admin/occasions.");
     }
 }
+
 
 
 
