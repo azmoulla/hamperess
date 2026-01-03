@@ -1062,7 +1062,6 @@ function displayMenu(menuItems) {
         button.addEventListener('click', () => button.parentElement.classList.toggle('open'));
     });
 }
-}
 // ------------------------------------------------------------------ //
 // -------------------- KIT: DATA FETCHING (API) -------------------- //
 // ------------------------------------------------------------------ //
@@ -5509,6 +5508,7 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
+
 
 
 
