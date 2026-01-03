@@ -3008,8 +3008,15 @@ function closeCart() { sideCart.classList.remove('active'); cartOverlay.classLis
 
 // Replace the existing renderCartItems function with this final merged version
 function renderCartItems() {
+    // 1. DEFINE THIS FIRST to prevent "Access before initialization" error
+    // We try to get the local version, or fallback to the global array
+    const localSaved = localStorage.getItem('savedForLater');
+    const savedForLaterList = localSaved ? JSON.parse(localSaved) : (window.savedForLater || []);
+
+    // 2. NOW we can safely check lengths
     goToCheckoutBtn.disabled = cart.length === 0;
-    if (cart.length === 0 && savedForLater.length === 0) {
+
+    if (cart.length === 0 && savedForLaterList.length === 0) {
         cartItemsContainer.innerHTML = '<p>Your basket is empty.</p>';
         goToCheckoutBtn.disabled = true;
         return;
@@ -3062,6 +3069,60 @@ function renderCartItems() {
                 </div>
             `;
         }
+        else {
+            const primaryImageUrl = getProductImageUrls(item)[0];
+            return `
+                <div class="cart-item">
+                    <img src="${primaryImageUrl}" alt="${item.title}" class="cart-item-image">
+                    <div class="cart-item-info">
+                        <p class="cart-item-title">${item.title}</p>
+                        <p class="cart-item-price">£${item.price.toFixed(2)}</p>
+                        <div class="quantity-selector">
+                            <button class="quantity-btn decrease-qty" data-id="${item.id}">-</button>
+                            <span class="quantity-value">${item.quantity}</span>
+                            <button class="quantity-btn increase-qty" data-id="${item.id}">+</button>
+                        </div>
+                    </div>
+                    <div class="cart-item-actions">
+                        <button class="cart-item-remove-btn" data-id="${item.id}">Remove</button>
+                        <button class="cart-item-action-link save-for-later-btn" data-id="${item.id}">Save for later</button>
+                    </div>
+                </div>`;
+        }
+    }).join('');
+
+    // 3. GENERATE SAVED ITEMS HTML
+    const savedForLaterHtml = savedForLaterList.map(item => {
+        const primaryImageUrl = getProductImageUrls(item)[0];
+        return `
+            <div class="cart-item saved-item">
+                <img src="${primaryImageUrl}" alt="${item.title}" class="cart-item-image">
+                <div class="cart-item-info">
+                    <p class="cart-item-title">${item.title}</p>
+                    <p class="cart-item-price">£${item.price.toFixed(2)}</p>
+                </div>
+                <div class="cart-item-actions">
+                     <button class="cart-item-remove-btn" data-id="${item.id}">Remove</button>
+                     <button class="cart-item-action-link move-to-basket-btn" data-id="${item.id}">Move to basket</button>
+                </div>
+            </div>`;
+    }).join('');
+
+    // 4. UPDATE DOM
+    cartItemsContainer.innerHTML = `
+        <div id="active-cart-items">
+            ${cart.length > 0 ? activeCartHtml : '<p>Your basket is empty.</p>'}
+        </div>
+        ${savedForLaterList.length > 0 ? `
+            <div class="saved-for-later-container">
+                <h3>Saved for Later</h3>
+                <div id="saved-items-list">
+                    ${savedForLaterHtml}
+                </div>
+            </div>
+        ` : ''}
+    `;
+}
         else {
             const primaryImageUrl = getProductImageUrls(item)[0];
             return `
@@ -5461,6 +5522,7 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
+
 
 
 
