@@ -3008,24 +3008,38 @@ function closeCart() { sideCart.classList.remove('active'); cartOverlay.classLis
 
 // Replace the existing renderCartItems function with this final merged version
 function renderCartItems() {
-    // 1. DEFINE THIS FIRST to prevent "Access before initialization" error
-    // We try to get the local version, or fallback to the global array
-    const localSaved = localStorage.getItem('savedForLater');
-    const savedForLaterList = localSaved ? JSON.parse(localSaved) : (window.savedForLater || []);
+    // 1. Safe retrieval of savedForLater (Handles "undefined" crash)
+    let savedForLaterList = [];
+    try {
+        const localSaved = localStorage.getItem('savedForLater');
+        if (localSaved) {
+            savedForLaterList = JSON.parse(localSaved);
+        } else if (typeof savedForLater !== 'undefined') {
+            savedForLaterList = savedForLater;
+        }
+    } catch (e) {
+        console.warn("Error loading saved items", e);
+        savedForLaterList = [];
+    }
 
-    // 2. NOW we can safely check lengths
-    goToCheckoutBtn.disabled = cart.length === 0;
+    // 2. Determine if checkout should be disabled
+    if (goToCheckoutBtn) {
+        goToCheckoutBtn.disabled = (!cart || cart.length === 0);
+    }
 
-    if (cart.length === 0 && savedForLaterList.length === 0) {
-        cartItemsContainer.innerHTML = '<p>Your basket is empty.</p>';
-        goToCheckoutBtn.disabled = true;
+    // 3. Handle Empty State
+    if ((!cart || cart.length === 0) && savedForLaterList.length === 0) {
+        if (cartItemsContainer) {
+            cartItemsContainer.innerHTML = '<p>Your basket is empty.</p>';
+        }
         return;
     }
-    
-    goToCheckoutBtn.disabled = cart.length === 0;
 
+    // 4. Generate HTML for Active Cart Items
+    // NOTICE the "{" after "item =>". This is critical!
     const activeCartHtml = cart.map(item => {
         if (item.isCustom) {
+            // Logic for Custom Hampers
             const componentsHtml = item.contents.map(component => `
                 <li class="component-item">
                     <span class="component-name">&#8226; ${component.name}</span>
@@ -3068,8 +3082,8 @@ function renderCartItems() {
                     </div>
                 </div>
             `;
-        }
-        else {
+        } else {
+            // Logic for Standard Products
             const primaryImageUrl = getProductImageUrls(item)[0];
             return `
                 <div class="cart-item">
@@ -3091,7 +3105,7 @@ function renderCartItems() {
         }
     }).join('');
 
-    // 3. GENERATE SAVED ITEMS HTML
+    // 5. Generate HTML for Saved Items
     const savedForLaterHtml = savedForLaterList.map(item => {
         const primaryImageUrl = getProductImageUrls(item)[0];
         return `
@@ -3108,20 +3122,22 @@ function renderCartItems() {
             </div>`;
     }).join('');
 
-    // 4. UPDATE DOM
-    cartItemsContainer.innerHTML = `
-        <div id="active-cart-items">
-            ${cart.length > 0 ? activeCartHtml : '<p>Your basket is empty.</p>'}
-        </div>
-        ${savedForLaterList.length > 0 ? `
-            <div class="saved-for-later-container">
-                <h3>Saved for Later</h3>
-                <div id="saved-items-list">
-                    ${savedForLaterHtml}
-                </div>
+    // 6. Update the Container
+    if (cartItemsContainer) {
+        cartItemsContainer.innerHTML = `
+            <div id="active-cart-items">
+                ${cart.length > 0 ? activeCartHtml : '<p>Your basket is empty.</p>'}
             </div>
-        ` : ''}
-    `;
+            ${savedForLaterList.length > 0 ? `
+                <div class="saved-for-later-container">
+                    <h3>Saved for Later</h3>
+                    <div id="saved-items-list">
+                        ${savedForLaterHtml}
+                    </div>
+                </div>
+            ` : ''}
+        `;
+    }
 }
         else {
             const primaryImageUrl = getProductImageUrls(item)[0];
@@ -5522,6 +5538,7 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
+
 
 
 
