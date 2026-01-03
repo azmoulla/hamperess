@@ -3135,8 +3135,6 @@ function renderCartItems() {
         `;
     }
 }
-
-
 function updateCartCount() {
     const cartCountElement = document.querySelector('.cart-icon-wrapper .cart-count');
     if (!cartCountElement) return;
@@ -5482,6 +5480,7 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
+
 
 
 
