@@ -994,13 +994,29 @@ function handleGlobalClick(e) {
 // FILE: public/app.js
 
 /* REPLACE the existing displayMenu function with this one */
+/* REPLACE the existing displayMenu function with this one */
 function displayMenu(menuItems) {
     const navLinksContainer = document.getElementById('nav-links');
     const mobileNavLinks = document.getElementById('mobile-nav-links');
+    
     if (!navLinksContainer || !mobileNavLinks) {
         console.error("ERROR: Could not find #nav-links or #mobile-nav-links elements.");
         return;
     }
+
+    // --- FIX START: Safety Check ---
+    // If menuItems is NOT an array (e.g. it's null, or an object like {data: [...]})
+    // we stop here to prevent the "forEach is not a function" crash.
+    if (!Array.isArray(menuItems)) {
+        console.error("displayMenu Error: Expected an array of items, but got:", menuItems);
+        // Attempt to fix it if it's wrapped in a 'data' property
+        if (menuItems && Array.isArray(menuItems.data)) {
+            menuItems = menuItems.data;
+        } else {
+            return; // Exit if we can't find a list
+        }
+    }
+    // --- FIX END ---
 
     let desktopMenuHtml = '';
     let mobileMenuHtml = `<a href="/#/account" class="mobile-nav-link-item account-link"><i class="fa-solid fa-user"></i> My Account / Log In</a>`;
@@ -5480,6 +5496,7 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
+
 
 
 
