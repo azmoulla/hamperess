@@ -1,6 +1,6 @@
 // FILE: wishlist.js
 
-const wishlist = (() => {
+window.wishlist = (() => {
     const WISHLIST_KEY = 'wishlistItems'; // Same key as in your Flutter app
 
     // Load wishlist IDs from localStorage
@@ -40,3 +40,4 @@ const wishlist = (() => {
         }
     };
 })();
+
