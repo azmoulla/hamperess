@@ -1304,7 +1304,18 @@ async function fetchProducts() {
         }
     }
 }
-
+async function fetchMenu() {
+    console.log("fetchMenu: Fetching menu data from API.");
+    // This fetches the menu structure from your backend
+    const menuItems = await fetchData('/api/admin-handler?action=get_menu');
+    
+    if (menuItems) {
+        // This calls the displayMenu function we just fixed
+        displayMenu(menuItems);
+    } else {
+        console.error("fetchMenu: Failed to fetch menu data.");
+    }
+}
 async function fetchOccasions() {
     // Try to fetch from API
     let occasions = await fetchData('/api/content-handler?action=occasions');
@@ -5497,6 +5508,7 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
+
 
 
 
