@@ -3126,7 +3126,7 @@ function renderCartItems() {
         }
     }).join('');
 
-   window.savedForLater = savedForLater.map(item => {
+   window.savedForLater = JSON.parse(localStorage.getItem('savedForLater')) || [];
         const primaryImageUrl = getProductImageUrls(item)[0];
         return `
             <div class="cart-item saved-item">
@@ -5560,6 +5560,7 @@ async function fetchOccasions() {
         console.error("fetchOccasions: Failed to fetch occasions from /api/admin/occasions.");
     }
 }
+
 
 
 
