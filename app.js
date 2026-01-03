@@ -999,33 +999,31 @@ function displayMenu(menuItems) {
     const navLinksContainer = document.getElementById('nav-links');
     const mobileNavLinks = document.getElementById('mobile-nav-links');
     
-    if (!navLinksContainer || !mobileNavLinks) {
-        console.error("ERROR: Could not find #nav-links or #mobile-nav-links elements.");
-        return;
-    }
+    if (!navLinksContainer || !mobileNavLinks) return;
 
-    // --- FIX START: Safety Check ---
-    // If menuItems is NOT an array (e.g. it's null, or an object like {data: [...]})
-    // we stop here to prevent the "forEach is not a function" crash.
-    if (!Array.isArray(menuItems)) {
-        console.error("displayMenu Error: Expected an array of items, but got:", menuItems);
-        // Attempt to fix it if it's wrapped in a 'data' property
-        if (menuItems && Array.isArray(menuItems.data)) {
-            menuItems = menuItems.data;
-        } else {
-            return; // Exit if we can't find a list
-        }
+    // --- FIX: Handle different API response formats ---
+    // This allows the app to work whether the API returns [ ... ] or { data: [ ... ] }
+    let items = [];
+    if (Array.isArray(menuItems)) {
+        items = menuItems;
+    } else if (menuItems && Array.isArray(menuItems.menu)) {
+        items = menuItems.menu;
+    } else if (menuItems && Array.isArray(menuItems.data)) {
+        items = menuItems.data;
+    } else {
+        console.error("displayMenu: Could not find a list in the menu data:", menuItems);
+        return; 
     }
-    // --- FIX END ---
+    // ------------------------------------------------
 
     let desktopMenuHtml = '';
     let mobileMenuHtml = `<a href="/#/account" class="mobile-nav-link-item account-link"><i class="fa-solid fa-user"></i> My Account / Log In</a>`;
 
-    menuItems.forEach(item => {
+    items.forEach(item => {
         const saleClass = item.isSale ? 'sale-item' : '';
 
         if (item.isMegaMenu && item.subMenu) {
-            // --- Logic for DESKTOP Mega Menu ---
+            // Desktop Mega Menu
             const subMenuLinks = item.subMenu.map(subItem => 
                 `<a href="/#/category/${subItem.argument}" class="mega-menu-link">${subItem.title}</a>`
             ).join('');
@@ -1034,14 +1032,11 @@ function displayMenu(menuItems) {
                 <div class="nav-item-with-mega-menu">
                     <span class="nav-links-desktop-item ${saleClass}">${item.title}</span>
                     <div class="mega-menu-panel">
-                        <div class="mega-menu-content">
-                            ${subMenuLinks}
-                        </div>
+                        <div class="mega-menu-content">${subMenuLinks}</div>
                     </div>
-                </div>
-            `;
+                </div>`;
 
-            // --- Logic for MOBILE Accordion Menu ---
+            // Mobile Accordion
             mobileMenuHtml += `
                 <div class="mobile-nav-accordion">
                     <button class="mobile-nav-accordion-header">
@@ -1051,10 +1046,9 @@ function displayMenu(menuItems) {
                     <div class="mobile-nav-accordion-content">
                         ${item.subMenu.map(subItem => `<a href="/#/category/${subItem.argument}" class="mobile-nav-link-item sub-item">${subItem.title}</a>`).join('')}
                     </div>
-                </div>
-            `;
+                </div>`;
         } else {
-            // --- Logic for standard links (Desktop and Mobile) ---
+            // Standard Link
             const linkTarget = item.target === '/create-your-own' ? '/#/create-your-own' : `/#/category/${item.argument}`;
             desktopMenuHtml += `<a href="${linkTarget}" class="nav-links-desktop-item ${saleClass}">${item.title}</a>`;
             mobileMenuHtml += `<a href="${linkTarget}" class="mobile-nav-link-item ${saleClass}">${item.title}</a>`;
@@ -1064,11 +1058,8 @@ function displayMenu(menuItems) {
     navLinksContainer.innerHTML = desktopMenuHtml;
     mobileNavLinks.innerHTML = mobileMenuHtml;
     
-    // Add event listeners for the new mobile accordion
     document.querySelectorAll('.mobile-nav-accordion-header').forEach(button => {
-        button.addEventListener('click', () => {
-            button.parentElement.classList.toggle('open');
-        });
+        button.addEventListener('click', () => button.parentElement.classList.toggle('open'));
     });
 }
 // ------------------------------------------------------------------ //
@@ -1315,21 +1306,21 @@ async function fetchProducts() {
 }
 
 async function fetchOccasions() {
-    console.log("fetchOccasions: Fetching occasions data.");
-    // Updated to use content-handler
-    const occasions = await fetchData('/api/content-handler?action=occasions');
-    if (occasions) displayOccasions(occasions);
-}
-
-async function fetchMenu() {
-   console.log("fetchMenu: Fetching menu data from API.");
-    // Updated to use admin-handler
-    const menuItems = await fetchData('/api/admin-handler?action=get_menu');
-    if (menuItems) {
-        displayMenu(menuItems);
-    } else {
-        console.error("fetchMenu: Failed to fetch menu data.");
+    // Try to fetch from API
+    let occasions = await fetchData('/api/content-handler?action=occasions');
+    
+    // If API fails (400 error) or returns null, use this Default Data
+    if (!occasions || occasions.error) {
+        console.warn("Using fallback data for Occasions.");
+        occasions = [
+            { title: "Birthday", navigationArgument: "Birthday", imageUrl: "https://images.unsplash.com/photo-1530103862676-de3c9da59af7?auto=format&fit=crop&w=400&q=80" },
+            { title: "Corporate", navigationArgument: "Corporate", imageUrl: "https://images.unsplash.com/photo-1577906950293-27776dd6f184?auto=format&fit=crop&w=400&q=80" },
+            { title: "Wedding", navigationArgument: "Wedding", imageUrl: "https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?auto=format&fit=crop&w=400&q=80" },
+            { title: "Anniversary", navigationArgument: "Anniversary", imageUrl: "https://images.unsplash.com/photo-1518199266791-5375a83190b7?auto=format&fit=crop&w=400&q=80" },
+            { title: "New Baby", navigationArgument: "New Baby", imageUrl: "https://images.unsplash.com/photo-1519689680058-324335c77eba?auto=format&fit=crop&w=400&q=80" }
+        ];
     }
+    displayOccasions(occasions);
 }
 
 async function fetchFooterInfo() {
@@ -1381,10 +1372,20 @@ async function fetchCustomHamperItems() {
 }
 
 async function fetchFeatures() {
-    console.log("fetchFeatures: Fetching features data.");
-    // Updated to use content-handler
-    const features = await fetchData('/api/content-handler?action=features');
-    if (features) displayFeatures(features);
+    // Try to fetch from API
+    let features = await fetchData('/api/content-handler?action=features');
+
+    // If API fails, use this Default Data
+    if (!features || features.error) {
+        console.warn("Using fallback data for Features.");
+        features = [
+            { icon: "fa-truck", title: "Free Delivery", subtitle: "On all orders over £50" },
+            { icon: "fa-gift", title: "Hand-Packed", subtitle: "With care and attention" },
+            { icon: "fa-star", title: "5-Star Service", subtitle: "Rated excellent by customers" },
+            { icon: "fa-leaf", title: "Eco-Friendly", subtitle: "Sustainable packaging" }
+        ];
+    }
+    displayFeatures(features);
 }
 
 async function fetchTestimonials() {
@@ -5496,6 +5497,7 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
+
 
 
 
