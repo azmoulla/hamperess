@@ -3083,7 +3083,7 @@ function renderCartItems() {
                 </div>`;
         }
     }).join('');
-
+    const savedForLater = JSON.parse(localStorage.getItem('savedForLater')) || [];
     const savedForLaterHtml = savedForLater.map(item => {
         const primaryImageUrl = getProductImageUrls(item)[0];
         return `
@@ -5461,5 +5461,6 @@ function applyCssVariables(settings) {
     if (settings.fontFamilyHeadings) root.style.setProperty('--font-family-headings', settings.fontFamilyHeadings);
     if (settings.fontFamilyBody) root.style.setProperty('--font-family-body', settings.fontFamilyBody);
 }
+
 
 
