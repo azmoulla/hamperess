@@ -14,7 +14,10 @@
 // -------------------- KIT: CORE SETUP & STATE -------------------- //
 // ------------------------------------------------------------------ //
 // TEST - IF THIS COMMENT DISAPPEARS, THE FILE IS BEING OVERWRITTEN.
-const searchClient = algoliasearch(ALGOLIA_APP_ID, ALGOLIA_SEARCH_KEY);
+const searchClient = algoliasearch(
+    import.meta.env.VITE_ALGOLIA_APP_ID, 
+    import.meta.env.VITE_ALGOLIA_SEARCH_KEY
+);
 const searchIndex = searchClient.initIndex('products');
 //import siteSettingsHandler from './api/content-handler?action=site_settings.js';
 // --- PWA SERVICE WORKER REGISTRATION ---
