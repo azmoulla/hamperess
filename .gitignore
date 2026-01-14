@@ -1,0 +1,7 @@
+firebase-service-account.json
+/node_modules
+/.vscode
+.env.local
+.vercel
+public/firebase-config.js
+.env*.local

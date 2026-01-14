@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luxury Hampers - Admin Panel</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="admin.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/javascript/javascript.min.js"></script>
+</head>
+<body class="text-gray-800">
+
+    <div id="app-container" class="min-h-screen">
+        <div id="admin-notification" class="p-4 rounded-md shadow-lg text-white text-sm font-semibold" style="z-index: 100;">
+            <span id="admin-notification-message"></span>
+        </div>
+        <div id="admin-confirm-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 h-full w-full flex items-center justify-center" style="z-index: 110;">
+            <div class="relative mx-auto p-5 border w-full max-w-sm shadow-lg rounded-md bg-white">
+                <div class="mt-3 text-center">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900">Confirmation</h3>
+                    <div class="mt-2 px-7 py-3"><p id="admin-confirm-message" class="text-sm text-gray-500"></p></div>
+                    <div class="items-center px-4 py-3 space-x-2">
+                        <button id="admin-confirm-ok-btn" class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md w-auto hover:bg-blue-700">OK</button>
+                        <button id="admin-confirm-cancel-btn" class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto hover:bg-gray-300">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="cancel-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center">
+            <div class="relative mx-auto p-5 border w-full max-w-lg shadow-lg rounded-md bg-white">
+                <div class="mt-3 text-center">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900" id="cancel-modal-title">Cancel Order</h3>
+                    <div id="cancel-modal-body" class="mt-2 px-7 py-3 text-left"><p class="text-sm text-gray-500 mb-4">Select items to cancel...</p><form id="cancellation-form"></form></div>
+                    <div id="cancel-modal-spinner" class="hidden justify-center items-center py-4"><div class="spinner"></div></div>
+                    <div class="items-center px-4 py-3 space-x-2"><button id="cancel-selected-btn" class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md w-auto hover:bg-blue-700">Cancel Selected</button><button id="cancel-full-btn" class="px-4 py-2 bg-red-600 text-white text-base font-medium rounded-md w-auto hover:bg-red-700">Cancel Entire Order</button><button id="close-cancel-modal-btn" class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto hover:bg-gray-300">Close</button></div>
+                </div>
+            </div>
+        </div>
+        <div id="issue-credit-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 h-full w-full flex items-center justify-center" style="z-index: 120;">
+            <div class="relative mx-auto p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
+                <div class="mt-3">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 text-center">Issue Store Credit</h3>
+                    <div class="mt-4 px-4 py-3">
+                        <p class="text-sm text-gray-600 mb-4">Generating a single-use voucher for return <strong id="modal-return-id"></strong> for customer <strong id="modal-customer-email"></strong>.</p>
+                        <form id="issue-credit-form">
+                            <label for="credit-value-input" class="block text-sm font-medium text-gray-700">Voucher Value (£)</label>
+                            <input type="number" id="credit-value-input" step="0.01" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                            <input type="hidden" id="modal-hidden-return-id"><input type="hidden" id="modal-hidden-return-path"><input type="hidden" id="modal-hidden-customer-email">
+                        </form>
+                    </div>
+                    <div id="credit-modal-spinner" class="hidden justify-center items-center py-4"><div class="spinner"></div></div>
+                    <div class="items-center px-4 py-3 space-x-2 text-right">
+                        <button id="modal-cancel-btn" class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto hover:bg-gray-300">Cancel</button>
+                        <button id="modal-generate-btn" class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md w-auto hover:bg-blue-700">Generate Voucher</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="login-section" class="flex items-center justify-center min-h-screen">
+            <div class="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
+                <h1 class="text-2xl font-bold text-center text-gray-800 mb-2">Admin Panel Login</h1>
+                <p class="text-center text-gray-500 mb-6">Access for authorized personnel only.</p>
+                <form id="login-form">
+                    <div class="mb-4"><label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email Address</label><input type="email" id="email" required class="w-full px-3 py-2 border border-gray-300 rounded-md"></div>
+                    <div class="mb-6"><label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label><input type="password" id="password" required class="w-full px-3 py-2 border border-gray-300 rounded-md"></div>
+                    <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700">Login</button>
+                </form>
+                <div id="login-error" class="mt-4 text-center text-red-600"></div>
+            </div>
+        </div>
+
+        <div id="dashboard-section" class="hidden">
+            <div class="flex h-screen bg-gray-100 font-sans">
+                
+                <nav id="admin-sidebar" class="w-64 bg-gray-800 text-white flex flex-col shrink-0">
+                    <div class="p-6 text-2xl font-bold border-b border-gray-700">Admin Menu</div>
+                     <ul class="flex-grow">
+        <li><a href="#" class="admin-nav-link active" data-page="page-search">Search</a></li>
+        <li><a href="#" class="admin-nav-link" data-page="page-pos">Create Order (POS)</a></li>
+        <li><a href="#" class="admin-nav-link" data-page="page-vouchers">Voucher Management</a></li>
+        <li><a href="#" class="admin-nav-link" data-page="page-products">Product Management</a></li>
+        <li><a href="#" class="admin-nav-link" data-page="page-components">Hamper Components</a></li>
+        <li><a href="#" class="admin-nav-link" data-page="page-fulfillment">Fulfillment Center</a></li>
+        <li><a href="#" class="admin-nav-link" data-page="page-menu">Menu Management</a></li> ```                
+                    </ul>
+                    <div class="p-4 border-t border-gray-700">
+                        <button id="logout-btn" class="w-full text-left text-gray-400 hover:text-white">Logout</button>
+                    </div>
+                </nav>
+
+                <main class="flex-1 p-8 overflow-y-auto">
+                    <div id="page-search" class="admin-page bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Search Orders & Returns</h2>
+                        <form id="search-form" class="mb-6 space-y-4">
+                            <div class="flex items-center space-x-6">
+                                <label class="flex items-center"><input type="radio" name="search-type" value="orders" checked class="h-4 w-4"> <span class="ml-2">Orders</span></label>
+                                <label class="flex items-center"><input type="radio" name="search-type" value="returns" class="h-4 w-4"> <span class="ml-2">Returns</span></label>
+                            </div>
+                            <div>
+                                <label for="search-input" class="block text-sm font-medium text-gray-700 mb-1">Search by Order ID or Customer Email</label>
+                                <div class="flex">
+                                    <input type="search" id="search-input" class="w-full flex-grow px-3 py-2 border border-gray-300 rounded-l-md">
+                                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-r-md hover:bg-blue-700">Search</button>
+                                </div>
+                            </div>
+                        </form>
+                        <div id="results-section">
+                            <div id="loader" class="hidden"></div>
+                            <div id="results-message">Enter a search term to begin.</div>
+                            <div id="results-table" class="hidden"></div>
+                        </div>
+                    </div>
+
+                    <div id="page-pos" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Create New Order (POS)</h2>
+                        <form id="create-order-form" class="space-y-6">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div><h3 class="font-semibold">Customer Details</h3><div><label>Full Name</label><input type="text" id="customer-name" required class="w-full mt-1 px-3 py-2 border rounded-md"></div><div><label>Email</label><input type="email" id="customer-email" required class="w-full mt-1 px-3 py-2 border rounded-md"></div></div>
+                                <div><h3 class="font-semibold">Delivery Address</h3><div><label>Address Line 1</label><input type="text" id="delivery-address" required class="w-full mt-1 px-3 py-2 border rounded-md"></div><div><label>Postcode</label><input type="text" id="delivery-postcode" required class="w-full mt-1 px-3 py-2 border rounded-md"></div></div>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold">Order Items</h3>
+                                <div id="pos-product-grid" class="mb-4"></div>
+                                <div id="order-items-summary" class="border rounded-md p-4 min-h-[100px]"><p class="text-gray-500">Click a product to add it to the order.</p></div>
+                                <div class="mt-4 pt-4 border-t">
+                                    <div class="space-y-2 text-right text-gray-700">
+                                        <div class="flex justify-between"><span>Subtotal:</span> <span id="order-subtotal">£0.00</span></div>
+                                        <div class="flex justify-between"><span>Delivery:</span> <span id="order-delivery">£0.00</span></div>
+                                        <div id="pos-discount-row" class="flex justify-between text-green-600 hidden"><span>Discount (<span id="pos-discount-code"></span>):</span><span id="pos-discount-amount">£0.00</span></div>
+                                        <div class="flex justify-between font-bold text-lg text-gray-900"><span>Total:</span> <span id="order-total">£0.00</span></div>
+                                        <p id="pos-warning-message" class="text-sm text-yellow-600 font-medium hidden"></p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                                <div>
+                                    <h3 class="font-semibold text-gray-700 mb-2">Discount Code</h3>
+                                    <div class="flex"><input type="text" id="pos-discount-input" placeholder="Enter code" class="flex-grow px-3 py-2 border border-gray-300 rounded-l-md"><button type="button" id="apply-discount-btn" class="bg-gray-600 text-white px-4 py-2 rounded-r-md hover:bg-gray-700">Apply</button></div>
+                                    <p id="pos-discount-message" class="text-sm mt-2"></p>
+                                </div>
+                                <div>
+                                    <h3 class="font-semibold text-gray-700 mb-2">Payment Details</h3>
+                                    <div>
+                                        <label for="payment-type" class="block text-sm font-medium text-gray-600">Payment Type</label>
+                                        <select id="payment-type" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                                            <option>External Card Reader</option><option>Card (Phone Payment)</option><option>Cash</option><option>Bank Transfer</option>
+                                        </select>
+                                    </div>
+                                    <div class="mt-4"><label for="transaction-id" class="block text-sm font-medium text-gray-600">Transaction ID</label><input type="text" id="transaction-id" placeholder="Paste ID from payment processor" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></div>
+                                </div>
+                            </div>
+                            <div class="mt-6 text-right"><button type="submit" class="px-6 py-3 bg-green-600 text-white font-bold rounded-md hover:bg-green-700">Create Order</button></div>
+                        </form>
+                    </div>
+
+                    <div id="page-vouchers" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <div class="flex justify-between items-center mb-6"><h2 class="text-2xl font-bold text-gray-800">Voucher Management</h2></div>
+                        <div class="mb-8 p-4 border rounded-md bg-gray-50">
+                            <h3 class="font-semibold mb-2">Issue a Stand-Alone Voucher</h3>
+                            <p class="text-sm text-gray-500 mb-4">Use this for goodwill gestures or marketing. It will not be linked to a return.</p>
+                            <form id="create-standalone-voucher-form" class="flex items-end space-x-4">
+                                <div><label for="standalone-email" class="block text-sm font-medium">Customer Email</label><input type="email" id="standalone-email" required class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                <div><label for="standalone-value" class="block text-sm font-medium">Voucher Value (£)</label><input type="number" id="standalone-value" step="0.01" required class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 h-11">Generate</button>
+                            </form>
+                        </div>
+                        <h3 class="font-semibold mb-4">Voucher History</h3>
+                        <div id="vouchers-table-container"></div>
+                    </div>
+
+                    <div id="page-products" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold text-gray-800">Product Management</h2>
+                            <button id="create-product-btn" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">Create New Product</button>
+                        </div>
+                        <div id="products-table-container"></div>
+                    </div>
+                    <div id="page-components" class="admin-page hidden">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold">Hamper Component Management</h2>
+                            <button id="create-component-btn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Create New Component</button>
+                        </div>
+                        <div id="components-table-container">
+                            </div>
+                    </div>
+                                   <div id="page-fulfillment" class="admin-page hidden">
+    <h2 class="text-2xl font-bold mb-4">Fulfillment Center</h2>
+
+    <div class="border-b border-gray-200">
+        <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+            <button class="fulfillment-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-blue-500 text-blue-600" data-tab="picking">
+                1. Aggregated Picking List
+            </button>
+            <button class="fulfillment-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300" data-tab="packing">
+                2. Pack Individual Orders
+            </button>
+        </nav>
+    </div>
+
+    <div class="py-6">
+        <div id="tab-content-picking" class="fulfillment-tab-content">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-semibold">Aggregated Picking List</h3>
+                <button id="print-picking-list-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Print List</button>
+            </div>
+            
+            <div class="bg-gray-50 p-4 rounded-lg border mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                    <div>
+                        <label for="picking-list-start-date" class="block text-sm font-medium text-gray-700">Start Date</label>
+                        <input type="date" id="picking-list-start-date" class="mt-1 block w-full p-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label for="picking-list-end-date" class="block text-sm font-medium text-gray-700">End Date</label>
+                        <input type="date" id="picking-list-end-date" class="mt-1 block w-full p-2 border border-gray-300 rounded-md">
+                    </div>
+                    <button id="picking-list-filter-btn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 w-full md:w-auto">Apply Filter</button>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Leave dates blank to show all unshipped orders.</p>
+            </div>
+            
+            <div id="picking-list-container"></div>
+        </div>
+
+        <div id="tab-content-packing" class="fulfillment-tab-content hidden">
+             <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-semibold">Orders to Pack</h3>
+                <span id="pack-order-count" class="px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-800 rounded-full"></span>
+            </div>
+            <p class="text-sm text-gray-600 mb-4">This list shows all orders in 'Pending' or 'Processing' status that need to be packed.</p>
+            <div id="pack-orders-container" class="space-y-4">
+                </div>
+        </div>
+    </div>
+</div>
+                <div id="page-menu" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+    <h2 class="text-2xl font-bold text-gray-800 mb-6">Header Menu Management</h2>
+    <p class="text-sm text-gray-600 mb-4">Edit the navigation structure directly in JSON format. Be careful with syntax, as errors can break the site navigation. Use a JSON validator if unsure.</p>
+    <form id="menu-form">
+        <textarea id="menu-json-editor" class="w-full h-96 border border-gray-300 rounded-md p-2 font-mono text-sm"></textarea>
+        <div id="menu-json-error" class="hidden mt-2 p-3 bg-red-50 border border-red-200 text-sm text-red-700 rounded-md"></div>
+        <div class="mt-4 text-right">
+            <button type="submit" id="save-menu-btn" class="px-6 py-2 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700">
+                Save Menu
+            </button>
+        </div>
+    </form>
+</div>
+
+                </main>
+            </div>
+        </div>
+    </div>
+    <div id="product-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center">
+    <div class="relative mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <h3 class="text-lg leading-6 font-medium text-gray-900 text-center" id="product-modal-title">Create New Product</h3>
+            <form id="product-form" class="mt-4 space-y-4">
+                <input type="hidden" id="product-id-input">
+                
+                <div>
+                    <label for="product-title-input" class="block text-sm font-medium text-gray-700">Title</label>
+                    <input type="text" id="product-title-input" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                </div>
+                
+                <div>
+                    <label for="product-bullets-input" class="block text-sm font-medium text-gray-700">Description (Bullet Points - One per line)</label>
+                    <textarea id="product-bullets-input" rows="4" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="Feature 1...&#10;Feature 2...&#10;Feature 3..."></textarea>
+                </div>
+                
+                <div>
+                    <label for="product-description-input" class="block text-sm font-medium text-gray-700">Professional Description (Paragraph)</label>
+                    <textarea id="product-description-input" rows="4" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></textarea>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="product-price-input" class="block text-sm font-medium text-gray-700">Price (£)</label>
+                        <input type="number" id="product-price-input" step="0.01" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label for="product-saleprice-input" class="block text-sm font-medium text-gray-700">Sale Price (£) (Optional)</label>
+                        <input type="number" id="product-saleprice-input" step="0.01" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., 49.99">
+                    </div>
+                    <div>
+                        <label for="product-stock-input" class="block text-sm font-medium text-gray-700">Stock</label>
+                        <input type="number" id="product-stock-input" step="1" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label for="product-rating-input" class="block text-sm font-medium text-gray-700">Rating (0-5)</label>
+                        <input type="number" id="product-rating-input" step="0.1" min="0" max="5" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., 4.5">
+                    </div>
+                    <div>
+                        <label for="product-reviewcount-input" class="block text-sm font-medium text-gray-700">Review Count</label>
+                        <input type="number" id="product-reviewcount-input" step="1" min="0" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., 128">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="product-category-input" class="block text-sm font-medium text-gray-700">Category</label>
+                        <input type="text" id="product-category-input" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label for="product-tag-input" class="block text-sm font-medium text-gray-700">Tag (e.g., BESTSELLER, SALE)</label>
+                        <input type="text" id="product-tag-input" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                </div>
+                
+                <div>
+                    <label for="product-images-input" class="block text-sm font-medium text-gray-700">Image URLs (comma-separated)</label>
+                    <textarea id="product-images-input" rows="3" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></textarea>
+                </div>
+
+                <div class="space-y-2">
+                    <div class="flex items-center">
+                        <input id="product-active-toggle" type="checkbox" class="h-4 w-4 rounded">
+                        <label for="product-active-toggle" class="ml-2 block text-sm text-gray-900">Product is Active</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input id="product-hamper-toggle" type="checkbox" class="h-4 w-4 rounded">
+                        <label for="product-hamper-toggle" class="ml-2 block text-sm text-gray-900">This product is a hamper</label>
+                    </div>
+                </div>
+                
+                <div id="hamper-contents-section" class="hidden pt-4 border-t">
+                    <h4 class="text-md font-semibold text-gray-800 mb-2">Hamper Contents</h4>
+                    <div class="flex items-center space-x-2 mb-4">
+                        <select id="hamper-product-select" class="flex-grow p-2 border border-gray-300 rounded-md"></select>
+                        <input id="hamper-quantity-input" type="number" value="1" min="1" class="w-20 p-2 border border-gray-300 rounded-md">
+                        <button type="button" id="add-hamper-item-btn" class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm">Add</button>
+                    </div>
+                    <div id="hamper-items-list" class="space-y-2">
+                        </div>
+                </div>
+                
+                <div id="product-form-spinner" class="hidden justify-center items-center py-4"><div class="spinner"></div></div>
+                <p id="product-form-error" class="text-sm text-red-600 hidden"></p>
+
+                <div class="items-center px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button type="submit" id="product-save-btn" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:ml-3 sm:w-auto sm:text-sm">Save</button>
+                    <button type="button" id="product-modal-cancel-btn" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+     <script src="firebase-config.js"></script> 
+    
+    <script src="admin.js?v=2"></script>
+
+    <div id="packing-slip-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 p-4">
+    <div id="packing-slip-content" class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-full overflow-y-auto">
+        <div class="p-8">
+            <div class="flex justify-between items-start pb-4 border-b">
+                <div>
+                    <h2 class="text-3xl font-bold text-gray-800">Packing Slip</h2>
+                    <p class="text-gray-500">Luxury Hampers</p>
+                </div>
+                <div class="text-right">
+                    <img src="assets/images/logo.png" alt="Company Logo" class="h-12 mb-2 ml-auto">
+                    <p class="text-sm"><strong>Order ID:</strong> #<span id="slip-order-id"></span></p>
+                    <p class="text-sm"><strong>Order Date:</strong> <span id="slip-order-date"></span></p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-8 my-6">
+                <div>
+                    <p class="text-xs text-gray-500 uppercase font-semibold">Customer</p>
+                    <p class="text-lg font-medium text-gray-900" id="slip-customer-name"></p>
+                </div>
+                <div class="text-right">
+                    <p class="text-xs text-gray-500 uppercase font-semibold">Order Value</p>
+                    <p class="text-lg font-medium text-gray-900" id="slip-order-value"></p>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="min-w-full">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Item</th>
+                            <th class="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">SKU / ID</th>
+                            <th class="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Quantity</th>
+                        </tr>
+                    </thead>
+                    <tbody id="slip-items-table" class="bg-white divide-y divide-gray-200">
+                    </tbody>
+                </table>
+            </div>
+             <div class="mt-8 pt-4 border-t text-center text-gray-500 text-sm">
+                <p>Thank you for your order!</p>
+            </div>
+        </div>
+        <div id="packing-slip-actions" class="bg-gray-50 p-4 text-right space-x-3 rounded-b-lg">
+            <button id="close-packing-slip-modal-btn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Close</button>
+            <button id="print-packing-slip-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                <i class="fas fa-print mr-2"></i>Print
+            </button>
+        </div>
+    </div>
+</div>
+</body>
+</html>

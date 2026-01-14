@@ -1,0 +1,35 @@
+[
+  {
+    "id": "occ_bday",
+    "title": "Birthday",
+    "imageUrl": "assets/images/occasion_birthday.jpg",
+    "navigationArgument": "Birthday Hampers"
+  },
+  {
+    "id": "occ_anniv",
+    "title": "Anniversary",
+    "imageUrl": "assets/images/occasion_anniversary.jpg",
+    "navigationArgument": "Anniversary Hampers" 
+    
+  },
+  {
+    "id": "occ_thanks",
+    "title": "Thank You",
+    "imageUrl": "assets/images/occasion_thank_you.jpg",
+    "navigationArgument": "Thank You Gifts" 
+   
+  },
+  {
+    "id": "occ_newbaby",
+    "title": "New Baby",
+    "imageUrl": "assets/images/occasion_new_baby.jpg",
+    "navigationArgument": "New Baby Gifts"
+
+  },
+  {
+    "id": "occ_congrats",
+    "title": "Congratulations",
+    "imageUrl": "assets/images/occasion_congrats.jpg",
+    "navigationArgument": "Congratulations Hampers"
+  }
+]

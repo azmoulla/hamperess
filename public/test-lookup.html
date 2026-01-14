@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Postcode API Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 2rem; }
+        input { font-size: 1rem; padding: 8px; min-width: 200px; }
+        button { font-size: 1rem; padding: 8px 12px; }
+        pre { background-color: #f0f0f0; padding: 1rem; border: 1px solid #ccc; white-space: pre-wrap; word-wrap: break-word; }
+        #status { font-weight: bold; margin: 1rem 0; }
+    </style>
+</head>
+<body>
+
+    <h1>Postcode Lookup API Test</h1>
+    <p>This page tests the <code>/api/postcode-lookup</code> endpoint directly.</p>
+
+    <div>
+        <input type="text" id="postcode-input" placeholder="Enter Postcode">
+        <button id="test-btn">Test API</button>
+    </div>
+
+    <div id="status"></div>
+    <h3>Raw Response:</h3>
+    <pre id="response"></pre>
+
+    <script>
+        document.getElementById('test-btn').addEventListener('click', async () => {
+            const postcode = document.getElementById('postcode-input').value;
+            const statusEl = document.getElementById('status');
+            const responseEl = document.getElementById('response');
+
+            statusEl.textContent = 'Testing...';
+            responseEl.textContent = '';
+
+            if (!postcode) {
+                statusEl.textContent = 'Error: Please enter a postcode.';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/postcode-lookup?postcode=${encodeURIComponent(postcode)}`);
+                
+                statusEl.textContent = `Status: ${response.status} ${response.statusText}`;
+
+                const data = await response.json();
+                responseEl.textContent = JSON.stringify(data, null, 2);
+
+            } catch (error) {
+                statusEl.textContent = 'A critical network error occurred.';
+                responseEl.textContent = error.toString();
+            }
+        });
+    </script>
+
+</body>
+</html>
