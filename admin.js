@@ -117,7 +117,7 @@ async function renderAdminAboutUsPage() {
     // Fetch current content
     try {
         // Fetch data using the corrected API path
-        const data = await fetchAdminAPI('/api/admin/about_us');
+        const data = await fetchAdminAPI('/api/content-manager?page=about_us');
         titleInput.value = data.pageTitle || 'About Us';
         sectionsContainer.innerHTML = ''; // Clear loading message
 
@@ -177,7 +177,7 @@ async function renderAdminAboutUsPage() {
 
         try {
             // Use the corrected API path
-            const response = await fetchAdminAPI('/api/admin/about_us', {
+            const response = await fetchAdminAPI('/api/content-manager?page=about_us', {
                 method: 'POST',
                 body: JSON.stringify({
                     pageTitle: titleInput.value,
@@ -199,6 +199,7 @@ async function renderAdminAboutUsPage() {
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- GLOBAL STATE ---
+    let globalSearchTags = { dietary: [], occasion: [], contents: [] };
     let allProducts = [];
     let allComponents = [];
     let allReturns = [];
@@ -266,7 +267,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         populateComponents(),
                         fetchAllReturns(),
                         fetchAllVouchers(),
-                        populateMenuEditor()
+                        populateMenuEditor(),
+                        (async () => {
+        try {
+            const settings = await fetchAdminAPI('/api/site-settings?type=settings');
+            globalSearchTags.dietary = settings.tags_dietary || [];
+            globalSearchTags.occasion = settings.tags_occasion || [];
+            globalSearchTags.contents = settings.tags_contents || [];
+        } catch(e) { console.error("Failed to load initial tags", e); }
+    })()
                     ]);
                 } else {
                     await fbAuth.signOut();
@@ -309,7 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- DATA FETCHING FUNCTIONS ---
     async function populateProducts() {
         try {
-            const response = await fetch('/api/products');
+            const response = await fetch('/api/inventory?type=product');
             if (!response.ok) throw new Error('Could not fetch products');
             allProducts = await response.json();
             if (posProductGrid) {
@@ -320,10 +329,92 @@ document.addEventListener('DOMContentLoaded', () => {
             if (posProductGrid) posProductGrid.innerHTML = '<p>Could not load products.</p>';
         }
     }
+    async function renderSearchTagsPage() {
+    console.log("--- renderSearchTagsPage STARTED ---");
+    
+    // 1. Fetch current settings (which will hold our tags)
+    try {
+        const settings = await fetchAdminAPI('/api/site-settings?type=settings');
+        // Load into global variable, default to empty arrays if undefined
+        globalSearchTags.dietary = settings.tags_dietary || [];
+        globalSearchTags.occasion = settings.tags_occasion || [];
+        globalSearchTags.contents = settings.tags_contents || [];
+        
+        renderTagLists();
+    } catch (error) {
+        showAdminNotification("Error loading tags: " + error.message, true);
+    }
+    
+    // 2. Render the lists in the UI
+    function renderTagLists() {
+        ['dietary', 'occasion', 'contents'].forEach(category => {
+            const listEl = document.getElementById(`list-tags-${category}`);
+            listEl.innerHTML = globalSearchTags[category].map(tag => `
+                <li class="flex justify-between items-center bg-white p-2 border rounded">
+                    <span>${tag}</span>
+                    <button class="text-red-500 hover:text-red-700 delete-tag-btn" data-category="${category}" data-tag="${tag}">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </li>
+            `).join('');
+        });
+    }
 
+    // 3. Event Listeners for Adding
+    document.querySelectorAll('.add-tag-btn').forEach(btn => {
+        btn.onclick = () => {
+            const category = btn.dataset.category;
+            const input = document.getElementById(`new-tag-${category}`);
+            const val = input.value.trim();
+            if (val && !globalSearchTags[category].includes(val)) {
+                globalSearchTags[category].push(val);
+                input.value = '';
+                renderTagLists();
+            }
+        };
+    });
+
+    // 4. Event Listeners for Deleting (Delegated)
+    document.getElementById('tags-management-container').onclick = (e) => {
+        const btn = e.target.closest('.delete-tag-btn');
+        if (btn) {
+            const { category, tag } = btn.dataset;
+            globalSearchTags[category] = globalSearchTags[category].filter(t => t !== tag);
+            renderTagLists();
+        }
+    };
+
+    // 5. Save Button
+    document.getElementById('save-tags-btn').onclick = async () => {
+        const btn = document.getElementById('save-tags-btn');
+        setButtonLoading(btn, true);
+        try {
+            // We save these into the existing site_settings endpoint
+            // First get current settings to avoid overwriting other fields
+            const currentSettings = await fetchAdminAPI('/api/site-settings?type=settings');
+            
+            const payload = {
+                ...currentSettings,
+                tags_dietary: globalSearchTags.dietary,
+                tags_occasion: globalSearchTags.occasion,
+                tags_contents: globalSearchTags.contents
+            };
+
+            await fetchAdminAPI('/api/site-settings?type=settings', {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+            showAdminNotification("Tags saved successfully!");
+        } catch (error) {
+            showAdminNotification("Error saving tags: " + error.message, true);
+        } finally {
+            setButtonLoading(btn, false);
+        }
+    };
+}
     async function populateComponents() {
         try {
-            const response = await fetch('/api/hamper-components');
+            const response = await fetch('/api/inventory?type=component');
             if (!response.ok) throw new Error('Could not fetch components');
             allComponents = await response.json();
         } catch (error) {
@@ -335,7 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!fbAuth.currentUser) return;
         try {
             const token = await fbAuth.currentUser.getIdToken();
-            const response = await fetch('/api/get-all-returns', { headers: { 'Authorization': `Bearer ${token}` } });
+            const response = await fetch('/api/returns?action=all', { headers: { 'Authorization': `Bearer ${token}` } });
             if (!response.ok) throw new Error('Failed to fetch returns.');
             allReturns = await response.json();
         } catch (error) {
@@ -348,7 +439,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!fbAuth.currentUser) return;
         try {
             const token = await fbAuth.currentUser.getIdToken();
-            const response = await fetch('/api/get-all-vouchers', { headers: { 'Authorization': `Bearer ${token}` } });
+            const response = await fetch('/api/vouchers', { headers: { 'Authorization': `Bearer ${token}` } });
             if (!response.ok) throw new Error('Failed to fetch vouchers.');
             allVouchers = await response.json();
         } catch (error) {
@@ -360,7 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!fbAuth.currentUser) return;
         try {
             const token = await fbAuth.currentUser.getIdToken();
-            const response = await fetch('/api/update-order-status', { method: 'PUT', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, ...updatePayload }) });
+            const response = await fetch('/api/admin-orders', { method: 'PUT', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, ...updatePayload }) });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error);
             showAdminNotification(result.message);
@@ -373,7 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
 let fulfillmentDateRange = { startDate: '', endDate: '' };
 
 async function showPickingList() {
-    let apiUrl = '/api/picking-list';
+    let apiUrl = '/api/admin-orders?action=picking';
     const params = new URLSearchParams();
     if (fulfillmentDateRange.startDate) params.append('startDate', fulfillmentDateRange.startDate);
     if (fulfillmentDateRange.endDate) params.append('endDate', fulfillmentDateRange.endDate);
@@ -388,10 +479,64 @@ async function showPickingList() {
         showAdminNotification(error.message, true);
     }
 }
+// Add this helper function inside admin.js
+function renderDynamicProductTags(product = null) {
+    const container = document.getElementById('product-tags-container');
+    if (!container) return;
+    
+    container.innerHTML = ''; // Clear previous
 
+    // Ensure we have the latest tags (if page loaded directly to products)
+    // If globalSearchTags is empty, we might need to fetch, but usually dashboard loads settings first.
+    
+    ['dietary', 'occasion', 'contents'].forEach(category => {
+        const wrapper = document.createElement('div');
+        wrapper.className = "bg-gray-50 p-3 rounded border";
+        
+        const title = category.charAt(0).toUpperCase() + category.slice(1);
+        let html = `<h5 class="font-medium text-sm mb-2 text-gray-700">${title}</h5>`;
+        html += `<div class="space-y-1 max-h-32 overflow-y-auto text-sm">`;
+        
+        const availableTags = globalSearchTags[category] || [];
+        
+        if (availableTags.length === 0) {
+            html += `<p class="text-xs text-gray-400 italic">No tags created in settings.</p>`;
+        } else {
+            availableTags.forEach(tag => {
+                // Check if the product already has this tag
+                let isChecked = false;
+                if (product) {
+                    // Handle different naming conventions just in case (e.g. dietaryTags vs tags_dietary)
+                    const productTags = product[`${category}Tags`] || [];
+                    isChecked = productTags.includes(tag);
+                }
+                
+                html += `
+                    <label class="flex items-center">
+                        <input type="checkbox" name="product-tag-${category}" value="${tag}" ${isChecked ? 'checked' : ''} class="mr-2"> 
+                        ${tag}
+                    </label>
+                `;
+            });
+        }
+        html += `</div>`;
+        wrapper.innerHTML = html;
+        container.appendChild(wrapper);
+    });
+}
+
+// UPDATE your existing openProductModal function:
+function openProductModal(item = null) {
+    // ... existing setup code ...
+    
+    // CALL THE NEW FUNCTION HERE:
+    renderDynamicProductTags(item);
+    
+    // ... rest of your existing code ...
+}
 async function showOrdersToPack() {
     const showAll = document.getElementById('pack-show-all-toggle')?.checked || false;
-    let apiUrl = '/api/get-unshipped-orders';
+    let apiUrl = '/api/admin-orders?action=unshipped';
     const params = new URLSearchParams();
     if (!showAll) {
         if (fulfillmentDateRange.startDate) params.append('startDate', fulfillmentDateRange.startDate);
@@ -457,6 +602,7 @@ if (adminSidebar) {
                 'page-fulfillment': () => { showPickingList(); showOrdersToPack(); },
                 'page-menu': populateMenuEditor, 
                 'page-admin-footer': renderAdminFooterPage,
+                'page-admin-tags': renderSearchTagsPage,
             };
 
             // --- Show Page Logic (No changes) ---
@@ -590,18 +736,62 @@ if (fulfillmentPage) {
         container.innerHTML = tableHtml;
     }
 
-    function renderVouchersTable(vouchers) {
-        const container = document.getElementById('vouchers-table-container');
-        if (!container) return;
-        let tableHtml = `<div class="overflow-x-auto"><table class="min-w-full bg-white border"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Value</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Issued To</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Origin</th></tr></thead><tbody class="divide-y divide-gray-200">`;
-        vouchers.forEach(v => {
-            const status = v.isActive ? (v.remainingValue < v.initialValue ? 'Partially Used' : 'Active') : 'Fully Used';
-            const statusClass = v.isActive ? 'status-approved' : 'status-cancelled';
-            tableHtml += `<tr><td class="px-6 py-4 font-mono text-sm">${v.code}</td><td class="px-6 py-4 text-sm">£${v.remainingValue.toFixed(2)} / £${v.initialValue.toFixed(2)}</td><td class="px-6 py-4 text-sm">${v.customerEmail}</td><td class="px-6 py-4 text-sm">${formatDate(v.creationDate)}</td><td class="px-6 py-4 text-sm"><span class="status-badge ${statusClass}">${status}</span></td><td class="px-6 py-4 text-sm">${v.createdForReturnId || 'Stand-alone'}</td></tr>`;
-        });
-        tableHtml += `</tbody></table></div>`;
-        container.innerHTML = tableHtml;
+    // REPLACE THE ENTIRE renderVouchersTable FUNCTION WITH THIS:
+function renderVouchersTable(vouchers) {
+    console.log("--- STARTING DIAGNOSTIC RENDER ---");
+    const container = document.getElementById('vouchers-table-container');
+    if (!container) return;
+
+    if (!Array.isArray(vouchers) || vouchers.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-sm p-4">No vouchers found.</p>';
+        return;
     }
+
+    let tableHtml = `<div class="overflow-x-auto"><table class="min-w-full bg-white border"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Value</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Issued To</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Origin</th></tr></thead><tbody class="divide-y divide-gray-200">`;
+
+    vouchers.forEach((v, index) => {
+        let currentValDisplay = "ERROR";
+        let initialValDisplay = "ERROR";
+        let status = "Unknown";
+        let statusClass = "status-cancelled";
+
+        try {
+            // --- DEEP TEST LOGIC ---
+            if (typeof v.remainingValue === 'undefined' || v.remainingValue === null) {
+                console.error(`🚨 DATA CORRUPTION FOUND: Voucher at Index ${index} (Code: ${v.code || 'UNKNOWN'}) is missing 'remainingValue'.`, v);
+                v.remainingValue = 0; // Temporary fix to allow render
+            }
+            if (typeof v.initialValue === 'undefined' || v.initialValue === null) {
+                console.error(`🚨 DATA CORRUPTION FOUND: Voucher at Index ${index} (Code: ${v.code || 'UNKNOWN'}) is missing 'initialValue'.`, v);
+                v.initialValue = 0; // Temporary fix to allow render
+            }
+
+            // Safe formatting
+            currentValDisplay = Number(v.remainingValue).toFixed(2);
+            initialValDisplay = Number(v.initialValue).toFixed(2);
+
+            const isActive = v.isActive === true;
+            status = isActive ? (v.remainingValue < v.initialValue ? 'Partially Used' : 'Active') : 'Fully Used';
+            statusClass = isActive ? 'status-approved' : 'status-cancelled';
+
+        } catch (err) {
+            console.error(`💥 CRITICAL ERROR on Voucher ${v.code}:`, err);
+        }
+
+        tableHtml += `<tr>
+            <td class="px-6 py-4 font-mono text-sm">${v.code || 'MISSING CODE'}</td>
+            <td class="px-6 py-4 text-sm">£${currentValDisplay} / £${initialValDisplay}</td>
+            <td class="px-6 py-4 text-sm">${v.customerEmail || 'No Email'}</td>
+            <td class="px-6 py-4 text-sm">${formatDate(v.creationDate)}</td>
+            <td class="px-6 py-4 text-sm"><span class="status-badge ${statusClass}">${status}</span></td>
+            <td class="px-6 py-4 text-sm">${v.createdForReturnId || 'Stand-alone'}</td>
+        </tr>`;
+    });
+
+    tableHtml += `</tbody></table></div>`;
+    container.innerHTML = tableHtml;
+    console.log("--- DIAGNOSTIC RENDER COMPLETE ---");
+}
 
     function renderPickingList(items) {
     const container = document.getElementById('picking-list-container');
@@ -698,7 +888,14 @@ if (fulfillmentPage) {
                 document.getElementById('product-hamper-toggle').checked = item.isHamper === true;
                 document.getElementById('product-stock-input').value = item.stock;
                 document.getElementById('product-category-input').value = item.category || '';
-                document.getElementById('product-tag-input').value = item.tag || '';
+                // --- REPLACEMENT: Populate New Tag Inputs ---
+                // Note: We use 'product-tag' now instead of 'product-tag-input' to match your new HTML
+                document.getElementById('product-tag').value = item.tag || ''; 
+                
+                document.getElementById('product-dietary-tags').value = (item.dietaryTags && Array.isArray(item.dietaryTags)) ? item.dietaryTags.join(', ') : '';
+                document.getElementById('product-occasion-tags').value = (item.occasionTags && Array.isArray(item.occasionTags)) ? item.occasionTags.join(', ') : '';
+                document.getElementById('product-contents-tags').value = (item.contentsTags && Array.isArray(item.contentsTags)) ? item.contentsTags.join(', ') : '';
+                // --------------------------------------------
                 let bulletsValue = '';
                 if (item.description) bulletsValue = Array.isArray(item.description) ? item.description.join('\n') : item.description;
                 document.getElementById('product-bullets-input').value = bulletsValue;
@@ -724,6 +921,11 @@ if (fulfillmentPage) {
             const isHamper = document.getElementById('product-hamper-toggle').checked;
             hamperSection.style.display = isHamper ? 'block' : 'none';
             renderHamperContentsList();
+            // 🔴 ADD THIS LINE HERE:
+        // This function (which we added to admin.js earlier) fills the HTML container 
+        if (typeof renderDynamicProductTags === 'function') {
+            renderDynamicProductTags(item);
+        }
         }
         productModal.classList.remove('hidden');
     }
@@ -861,7 +1063,7 @@ async function populateMenuEditor() {
 
     try {
         const token = await fbAuth.currentUser.getIdToken();
-        const apiUrl = `/api/order-details?orderId=${orderId}`;
+       const apiUrl = '/api/admin-orders?action=details&orderId=${orderId}';
         
         const response = await fetch(apiUrl, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -921,7 +1123,7 @@ async function performCancellation(payload) {
     if (cancelModalSpinner) cancelModalSpinner.classList.remove('hidden');
     try {
         const token = await fbAuth.currentUser.getIdToken();
-        const response = await fetch('/api/cancel-order', {
+        const response = await fetch('/api/admin-orders?action=cancel', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -1050,12 +1252,24 @@ async function performCancellation(payload) {
             } else {
                 const descriptionBullets = document.getElementById('product-bullets-input').value.split('\n').map(line => line.trim()).filter(Boolean);
                 const isHamper = document.getElementById('product-hamper-toggle').checked;
-                payload = { title: document.getElementById('product-title-input').value, description: descriptionBullets, professionalDescription: document.getElementById('product-description-input').value, price: parseFloat(document.getElementById('product-price-input').value), salePrice: parseFloat(document.getElementById('product-saleprice-input').value) || null, rating: parseFloat(document.getElementById('product-rating-input').value) || null, reviewCount: parseInt(document.getElementById('product-reviewcount-input').value, 10) || 0, stock: parseInt(document.getElementById('product-stock-input').value, 10), category: document.getElementById('product-category-input').value, tag: document.getElementById('product-tag-input').value, imageUrls: document.getElementById('product-images-input').value.split(',').map(url => url.trim()).filter(Boolean), isActive: document.getElementById('product-active-toggle').checked, isHamper: isHamper };
+                payload = { title: document.getElementById('product-title-input').value, description: descriptionBullets, professionalDescription: document.getElementById('product-description-input').value, price: parseFloat(document.getElementById('product-price-input').value), salePrice: parseFloat(document.getElementById('product-saleprice-input').value) || null, rating: parseFloat(document.getElementById('product-rating-input').value) || null, reviewCount: parseInt(document.getElementById('product-reviewcount-input').value, 10) || 0, stock: parseInt(document.getElementById('product-stock-input').value, 10), category: document.getElementById('product-category-input').value, tag: '', imageUrls: document.getElementById('product-images-input').value.split(',').map(url => url.trim()).filter(Boolean), isActive: document.getElementById('product-active-toggle').checked, isHamper: isHamper };
                 if (isHamper) payload.hamperContents = currentHamperContents.map(({ productId, quantity }) => ({ productId, quantity }));
             }
+           // --- NEW TAG PARSING LOGIC (Comma Separated) ---
+                const parseTags = (val) => val ? val.split(',').map(t => t.trim()).filter(t => t !== '') : [];
+
+                // Overwrite the 'tag' field from the payload because the ID changed in HTML
+                payload.tag = document.getElementById('product-tag').value;
+
+                // Add the 3 new arrays
+                payload.dietaryTags = parseTags(document.getElementById('product-dietary-tags').value);
+                payload.occasionTags = parseTags(document.getElementById('product-occasion-tags').value);
+                payload.contentsTags = parseTags(document.getElementById('product-contents-tags').value);
+                // -----------------------------------------------
+                // -------------------------------------
             try {
                 const token = await fbAuth.currentUser.getIdToken();
-                const apiUrl = currentEditMode === 'component' ? `/api/hamper-components?id=${id}` : `/api/products?id=${id}`;
+                const apiUrl = currentEditMode === 'component' ? `/api/inventory?type=component?id=${id}` : `/api/inventory?type=product?id=${id}`;
                 const method = isEditing ? 'PUT' : 'POST';
                 const response = await fetch(apiUrl, { method, headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                 const result = await response.json();
@@ -1112,7 +1326,7 @@ if (printPackingSlipBtn) {
             const editProductBtn = e.target.closest('.edit-product-btn');
             if (editProductBtn) { currentEditMode = 'product'; const product = allProducts.find(p => p.id === editProductBtn.dataset.productId); openProductModal(product); return; }
             const deleteProductBtn = e.target.closest('.delete-product-btn');
-            if (deleteProductBtn) { const productId = deleteProductBtn.dataset.productId; const product = allProducts.find(p => p.id === productId); if (!product) return; showAdminConfirm(`Are you sure you want to archive "${product.title}"?`, async () => { const token = await fbAuth.currentUser.getIdToken(); await fetch(`/api/products?id=${productId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }); await populateProducts(); renderProductsTable(allProducts); showAdminNotification('Product archived successfully!'); }); return; }
+            if (deleteProductBtn) { const productId = deleteProductBtn.dataset.productId; const product = allProducts.find(p => p.id === productId); if (!product) return; showAdminConfirm(`Are you sure you want to archive "${product.title}"?`, async () => { const token = await fbAuth.currentUser.getIdToken(); await fetch(`/api/inventory?type=product?id=${productId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }); await populateProducts(); renderProductsTable(allProducts); showAdminNotification('Product archived successfully!'); }); return; }
             const createComponentBtn = e.target.closest('#create-component-btn');
             if (createComponentBtn) { currentEditMode = 'component'; openProductModal(); return; }
             const editComponentBtn = e.target.closest('.edit-component-btn');
@@ -1243,7 +1457,7 @@ if (orderCardHeader) {
     }
     return;
 }
-            if (deleteComponentBtn) { const componentId = deleteComponentBtn.dataset.componentId; const component = allComponents.find(c => c.id === componentId); if (!component) return; showAdminConfirm(`Permanently delete "${component.name}"? This cannot be undone.`, async () => { const token = await fbAuth.currentUser.getIdToken(); await fetch(`/api/hamper-components?id=${componentId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }); await populateComponents(); renderComponentsTable(allComponents); showAdminNotification('Component deleted.'); }); return; }
+            if (deleteComponentBtn) { const componentId = deleteComponentBtn.dataset.componentId; const component = allComponents.find(c => c.id === componentId); if (!component) return; showAdminConfirm(`Permanently delete "${component.name}"? This cannot be undone.`, async () => { const token = await fbAuth.currentUser.getIdToken(); await fetch(`/api/inventory?type=component?id=${componentId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }); await populateComponents(); renderComponentsTable(allComponents); showAdminNotification('Component deleted.'); }); return; }
             const packingSlipBtn = e.target.closest('.packing-slip-btn');
             if (packingSlipBtn) { showPackingSlip(packingSlipBtn.dataset.orderId); return; }
             const markPackedBtn = e.target.closest('.mark-packed-btn');
@@ -1460,7 +1674,7 @@ if (createReplacementTarget) {
     });
 }
     
-    if (applyDiscountBtn) { applyDiscountBtn.addEventListener('click', async () => { const codeInput = document.getElementById('pos-discount-input'); const messageEl = document.getElementById('pos-discount-message'); const code = codeInput.value.trim(); if (!code) { posAppliedDiscount = null; if (messageEl) messageEl.textContent = ''; updateOrderSummary(); return; } try { const response = await fetch(`/api/validate-discount?code=${code}`); const result = await response.json(); if (!response.ok) throw new Error(result.error); posAppliedDiscount = result; if (messageEl) { messageEl.textContent = `Success: "${result.description}" applied!`; messageEl.style.color = 'green'; } } catch (error) { posAppliedDiscount = null; if (messageEl) { messageEl.textContent = `Error: ${error.message}`; messageEl.style.color = 'red'; } } updateOrderSummary(); }); }
+    if (applyDiscountBtn) { applyDiscountBtn.addEventListener('click', async () => { const codeInput = document.getElementById('pos-discount-input'); const messageEl = document.getElementById('pos-discount-message'); const code = codeInput.value.trim(); if (!code) { posAppliedDiscount = null; if (messageEl) messageEl.textContent = ''; updateOrderSummary(); return; } try { const response = await fetch(`/api/vouchers?code=${code}`); const result = await response.json(); if (!response.ok) throw new Error(result.error); posAppliedDiscount = result; if (messageEl) { messageEl.textContent = `Success: "${result.description}" applied!`; messageEl.style.color = 'green'; } } catch (error) { posAppliedDiscount = null; if (messageEl) { messageEl.textContent = `Error: ${error.message}`; messageEl.style.color = 'red'; } } updateOrderSummary(); }); }
 
     if (creditModal) { creditModal.addEventListener('click', async (e) => { const generateBtn = e.target.closest('#modal-generate-btn'); const cancelBtn = e.target.closest('#modal-cancel-btn'); if (cancelBtn) creditModal.classList.add('hidden'); if (generateBtn) { const returnPath = document.getElementById('modal-hidden-return-path').value; const customerEmail = document.getElementById('modal-hidden-customer-email').value; const value = document.getElementById('credit-value-input').value; if (!returnPath || !value || !customerEmail) return showAdminNotification('Data is missing. Please close and retry.', true); const spinner = document.getElementById('credit-modal-spinner'); if (spinner) spinner.classList.remove('hidden'); if (generateBtn) generateBtn.disabled = true; try { const token = await fbAuth.currentUser.getIdToken(); const response = await fetch('/api/generate-store-credit', { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ returnPath, value, customerEmail }) });
             const result = await response.json(); if (!response.ok) throw new Error(result.error || result.details || 'API error'); creditModal.classList.add('hidden'); showAdminNotification(`Success! Send this code to the customer: ${result.code}`); await fetchAllReturns(); if (searchForm) searchForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); } catch (error) { showAdminNotification(`Error: ${error.message}`, true); } finally { if (spinner) spinner.classList.add('hidden'); if (generateBtn) generateBtn.disabled = false; } } }); }
@@ -1557,11 +1771,11 @@ async function renderAdminDeliveryInfoPage() {
 
     try {
         // --- Fetch 1: Delivery Info Content (No Change) ---
-        const data = await fetchAdminAPI('/api/admin/delivery_info');
+        const data = await fetchAdminAPI('/api/content-manager?page=delivery_info');
 
         // --- Fetch 2: Site Settings for live values (NEW) ---
         try {
-            const settingsData = await fetchAdminAPI('/api/admin/site_settings');
+            const settingsData = await fetchAdminAPI('/api/site-settings?type=settings');
             if (liveChargeEl) liveChargeEl.textContent = `£${(settingsData.baseDeliveryCharge || 0).toFixed(2)}`;
             if (liveThresholdEl) liveThresholdEl.textContent = `£${(settingsData.freeDeliveryThreshold || 0).toFixed(2)}`;
         } catch (settingsError) {
@@ -1641,7 +1855,7 @@ async function renderAdminDeliveryInfoPage() {
             }
 
             try {
-                const response = await fetchAdminAPI('/api/admin/delivery_info', {
+                const response = await fetchAdminAPI('/api/content-manager?page=delivery_info', {
                     method: 'POST',
                     body: JSON.stringify({
                         pageTitle: currentPageTitle, // Send current title
@@ -1797,7 +2011,7 @@ async function renderAdminContactUsPage() {
 
 
     try {
-        const data = await fetchAdminAPI('/api/admin/contact_us'); // Fetch data
+        const data = await fetchAdminAPI('/api/content-manager?page=contact_us'); // Fetch data
 
         // Populate fields
         document.getElementById('contact-us-title').value = data.pageTitle || 'Get in Touch';
@@ -1865,7 +2079,7 @@ async function renderAdminContactUsPage() {
         }
 
         try {
-            const response = await fetchAdminAPI('/api/admin/contact_us', {
+            const response = await fetchAdminAPI('/api/content-manager?page=contact_us', {
                 method: 'POST',
                 body: JSON.stringify(payload)
             });
@@ -1951,7 +2165,7 @@ async function renderAdminFaqsPage() {
 
     try {
         // Fetch the array of FAQs
-        const faqsArray = await fetchAdminAPI('/api/admin/faqs'); // Fetch data
+        const faqsArray = await fetchAdminAPI('/api/content-manager?page=faqs'); // Fetch data
         container.innerHTML = ''; // Clear loading
 
         if (faqsArray && faqsArray.length > 0) {
@@ -2003,7 +2217,7 @@ async function renderAdminFaqsPage() {
         }
 
         try {
-            const response = await fetchAdminAPI('/api/admin/faqs', {
+            const response = await fetchAdminAPI('/api/content-manager?page=faqs', {
                 method: 'POST',
                 // Send the data wrapped in an object with the 'faqs' key
                 body: JSON.stringify({ faqs: faqsData })
@@ -2069,7 +2283,7 @@ async function renderAdminSiteSettingsPage() {
     saveStatus.textContent = 'Loading...';
     
     try {
-        const data = await fetchAdminAPI('/api/admin/site_settings');
+        const data = await fetchAdminAPI('/api/site-settings?type=settings');
         
         // --- Populate form fields (All Fields) ---
         // Theming
@@ -2133,7 +2347,7 @@ async function renderAdminSiteSettingsPage() {
         };
         
         try {
-            const response = await fetchAdminAPI('/api/admin/site_settings', {
+            const response = await fetchAdminAPI('/api/site-settings?type=settings', {
                 method: 'POST',
                 body: JSON.stringify(payload)
             });
@@ -2211,7 +2425,7 @@ async function renderAdminOurMissionPage() {
     titleInput.value = '';
 
     try {
-        const data = await fetchAdminAPI('/api/admin/our_mission');
+        const data = await fetchAdminAPI('/api/content-manager?page=our_mission');
         titleInput.value = data.pageTitle || 'Our Mission';
         sectionsContainer.innerHTML = ''; 
 
@@ -2257,7 +2471,7 @@ async function renderAdminOurMissionPage() {
         }
 
         try {
-            const response = await fetchAdminAPI('/api/admin/our_mission', {
+            const response = await fetchAdminAPI('/api/content-manager?page=our_mission', {
                 method: 'POST',
                 body: JSON.stringify({
                     pageTitle: titleInput.value,
@@ -2327,7 +2541,7 @@ async function renderAdminPrivacyPolicyPage() {
     titleInput.value = '';
 
     try {
-        const data = await fetchAdminAPI('/api/admin/privacy_policy');
+        const data = await fetchAdminAPI('/api/content-manager?page=privacy_policy');
         titleInput.value = data.pageTitle || 'Privacy Policy';
         sectionsContainer.innerHTML = ''; 
 
@@ -2373,7 +2587,7 @@ async function renderAdminPrivacyPolicyPage() {
         }
 
         try {
-            const response = await fetchAdminAPI('/api/admin/privacy_policy', {
+            const response = await fetchAdminAPI('/api/content-manager?page=privacy_policy', {
                 method: 'POST',
                 body: JSON.stringify({
                     pageTitle: titleInput.value,
@@ -2443,7 +2657,7 @@ async function renderAdminTermsConditionsPage() {
     titleInput.value = '';
 
     try {
-        const data = await fetchAdminAPI('/api/admin/terms_and_conditions');
+        const data = await fetchAdminAPI('//api/content-manager?page=terms_and_conditions');
         titleInput.value = data.pageTitle || 'Terms and Conditions';
         sectionsContainer.innerHTML = ''; 
 
@@ -2489,7 +2703,7 @@ async function renderAdminTermsConditionsPage() {
         }
 
         try {
-            const response = await fetchAdminAPI('/api/admin/terms_and_conditions', {
+            const response = await fetchAdminAPI('//api/content-manager?page=terms_and_conditions', {
                 method: 'POST',
                 body: JSON.stringify({
                     pageTitle: titleInput.value,
@@ -2559,7 +2773,7 @@ async function renderAdminFooterPage() {
     legalLinksContainer.innerHTML = '';
 
     try {
-        const data = await fetchAdminAPI('/api/admin/footer_info');
+        const data = await fetchAdminAPI('/api/content-manager?page=footer_info');
 
         // Populate Company Info
         document.getElementById('footer-company-title').value = data.companyInfo.title;
@@ -2646,7 +2860,7 @@ async function renderAdminFooterPage() {
         };
 
         try {
-            const response = await fetchAdminAPI('/api/admin/footer_info', {
+            const response = await fetchAdminAPI('/api/content-manager?page=footer_info', {
                 method: 'POST',
                 body: JSON.stringify(payload)
             });
