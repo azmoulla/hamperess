@@ -117,7 +117,7 @@ async function renderAdminAboutUsPage() {
     // Fetch current content
     try {
         // Fetch data using the corrected API path
-        const data = await fetchAdminAPI('/api/content-manager?page=about_us');
+        const data = await fetchAdminAPI('/api/site-data?action=content&page=about_us');
         titleInput.value = data.pageTitle || 'About Us';
         sectionsContainer.innerHTML = ''; // Clear loading message
 
@@ -177,7 +177,7 @@ async function renderAdminAboutUsPage() {
 
         try {
             // Use the corrected API path
-            const response = await fetchAdminAPI('/api/content-manager?page=about_us', {
+            const response = await fetchAdminAPI('/api/site-data?action=content&page=about_us', {
                 method: 'POST',
                 body: JSON.stringify({
                     pageTitle: titleInput.value,
@@ -270,7 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         populateMenuEditor(),
                         (async () => {
         try {
-            const settings = await fetchAdminAPI('/api/site-settings?type=settings');
+            const settings = await fetchAdminAPI('/api/site-data?action=settings&type=settings');
             globalSearchTags.dietary = settings.tags_dietary || [];
             globalSearchTags.occasion = settings.tags_occasion || [];
             globalSearchTags.contents = settings.tags_contents || [];
@@ -334,7 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 1. Fetch current settings (which will hold our tags)
     try {
-        const settings = await fetchAdminAPI('/api/site-settings?type=settings');
+        const settings = await fetchAdminAPI('/api/site-data?action=settings&type=settings');
         // Load into global variable, default to empty arrays if undefined
         globalSearchTags.dietary = settings.tags_dietary || [];
         globalSearchTags.occasion = settings.tags_occasion || [];
@@ -391,7 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             // We save these into the existing site_settings endpoint
             // First get current settings to avoid overwriting other fields
-            const currentSettings = await fetchAdminAPI('/api/site-settings?type=settings');
+            const currentSettings = await fetchAdminAPI('/api/site-data?action=settings&type=settings');
             
             const payload = {
                 ...currentSettings,
@@ -400,7 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 tags_contents: globalSearchTags.contents
             };
 
-            await fetchAdminAPI('/api/site-settings?type=settings', {
+            await fetchAdminAPI('/api/site-data?action=settings&type=settings', {
                 method: 'POST',
                 body: JSON.stringify(payload)
             });
@@ -1775,7 +1775,7 @@ async function renderAdminDeliveryInfoPage() {
 
         // --- Fetch 2: Site Settings for live values (NEW) ---
         try {
-            const settingsData = await fetchAdminAPI('/api/site-settings?type=settings');
+            const settingsData = await fetchAdminAPI('/api/site-data?action=settings&type=settings');
             if (liveChargeEl) liveChargeEl.textContent = `£${(settingsData.baseDeliveryCharge || 0).toFixed(2)}`;
             if (liveThresholdEl) liveThresholdEl.textContent = `£${(settingsData.freeDeliveryThreshold || 0).toFixed(2)}`;
         } catch (settingsError) {
@@ -2283,7 +2283,7 @@ async function renderAdminSiteSettingsPage() {
     saveStatus.textContent = 'Loading...';
     
     try {
-        const data = await fetchAdminAPI('/api/site-settings?type=settings');
+        const data = await fetchAdminAPI('/api/site-data?action=settings&type=settings');
         
         // --- Populate form fields (All Fields) ---
         // Theming
@@ -2347,7 +2347,7 @@ async function renderAdminSiteSettingsPage() {
         };
         
         try {
-            const response = await fetchAdminAPI('/api/site-settings?type=settings', {
+            const response = await fetchAdminAPI('/api/site-data?action=settings&type=settings', {
                 method: 'POST',
                 body: JSON.stringify(payload)
             });
@@ -2773,7 +2773,7 @@ async function renderAdminFooterPage() {
     legalLinksContainer.innerHTML = '';
 
     try {
-        const data = await fetchAdminAPI('/api/content-manager?page=footer_info');
+        const data = await fetchAdminAPI('/api/site-data?action=content&page=footer_info');
 
         // Populate Company Info
         document.getElementById('footer-company-title').value = data.companyInfo.title;
@@ -2860,7 +2860,7 @@ async function renderAdminFooterPage() {
         };
 
         try {
-            const response = await fetchAdminAPI('/api/content-manager?page=footer_info', {
+            const response = await fetchAdminAPI('/api/site-data?action=content&page=footer_info', {
                 method: 'POST',
                 body: JSON.stringify(payload)
             });

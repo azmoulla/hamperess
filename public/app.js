@@ -1,14 +1,14 @@
 // FILE: app.js
 // This file has been reorganized into logical kits for better maintainability.
 // Import the handlers (ensure file paths are correct relative to app.js)
-//import aboutUsHandler from './api/content-manager?page=about_us.js';
+//import aboutUsHandler from './api/site-data?action=content&page=about_us.js';
 //import contactUsHandler from './api/content-manager?page=contact_us.js';
 
 // ... inside your Express application setup ...
 
 // Register the handlers
 // The app.all method allows both GET (fetching) and POST (saving) to use the same handler
-//app.all('/api/content-manager?page=about_us', aboutUsHandler);      // <-- THIS WAS MISSING/CRASHING BEFORE
+//app.all('/api/site-data?action=content&page=about_us', aboutUsHandler);      // <-- THIS WAS MISSING/CRASHING BEFORE
 //app.all('/api/content-manager?page=contact_us', contactUsHandler);  // <-- THIS IS THE NEW MISSING ROUTE
 // ------------------------------------------------------------------ //
 // -------------------- KIT: CORE SETUP & STATE -------------------- //
@@ -24,7 +24,7 @@ if ('serviceWorker' in navigator) {
 }
 const searchClient = algoliasearch(ALGOLIA_APP_ID, ALGOLIA_SEARCH_KEY);
 const searchIndex = searchClient.initIndex('products');
-//import siteSettingsHandler from './api/site-settings?type=settings.js';
+//import siteSettingsHandler from './api/site-data?action=settings&type=settings.js';
 // --- PWA SERVICE WORKER REGISTRATION ---
 console.log('app.js has started successfully!');
 
@@ -607,7 +607,7 @@ async function loadDynamicSearchFilters() {
         // Fallback: If appSettings wasn't loaded for some reason, try fetching manually.
         if (!settings) {
              console.warn("window.appSettings not found, attempting fallback fetch...");
-             const response = await fetch('/api/site-settings?type=settings'); 
+             const response = await fetch('/api/site-data?action=settings&type=settings'); 
              if (!response.ok) throw new Error("Settings API not available");
              settings = await response.json();
         }
@@ -1649,8 +1649,8 @@ async function fetchMenu() {
     try {
         console.log("fetchMenu: Fetching menu data from API.");
         
-        // --- THIS WAS THE PROBLEM. CHANGED '/api/menu' TO '/api/site-settings?type=menu' ---
-        const response = await fetch('/api/site-settings?type=menu'); 
+        // --- THIS WAS THE PROBLEM. CHANGED '/api/menu' TO '/api/site-data?action=settings&type=menu' ---
+        const response = await fetch('/api/site-data?action=settings&type=menu'); 
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -1672,11 +1672,11 @@ async function fetchMenu() {
 async function fetchFooterInfo() {
     console.log("fetchFooterInfo: Fetching footer info from API.");
     // This now fetches from your new API endpoint
-    const footerInfo = await fetchData('/api/content-manager?page=footer_info');
+    const footerInfo = await fetchData('/api/site-data?action=content&page=footer_info');
     if (footerInfo) {
         displayFooter(footerInfo);
     } else {
-        console.error("fetchFooterInfo: Failed to fetch footer data from /api/content-manager?page=footer_info.");
+        console.error("fetchFooterInfo: Failed to fetch footer data from /api/site-data?action=content&page=footer_info.");
     }
 }
 
@@ -2678,7 +2678,7 @@ async function fetchAndDisplayStaticPage(pageName) {
     // Determine the source based on pageName
     switch(pageName) {
         case 'about_us':
-            endpoint = '/api/content-manager?page=about_us'; // Use the API endpoint for About Us
+            endpoint = '/api/site-data?action=content&page=about_us'; // Use the API endpoint for About Us
             break;
             case 'our_mission':
             endpoint = '/api/content-manager?page=our_mission';
@@ -4289,7 +4289,7 @@ async function handleOrderCancellation(orderId, type) {
 
     showConfirmationModal(confirmationMessage, async () => {
         try {
-            await fetchWithAuth(`/api/cancel-order`, {
+            await fetchWithAuth(`/api/orders?action=cancel`, {
                 method: 'POST',
                 body: JSON.stringify({
                     orderId,
@@ -5888,7 +5888,7 @@ async function fetchSiteSettings() {
     console.log("fetchSiteSettings: Fetching site configuration from CMS.");
     try {
         // Use a simple fetch, as the public site does not need admin authentication
-        const response = await fetch('/api/site-settings?type=settings'); 
+        const response = await fetch('/api/site-data?action=settings&type=settings'); 
         if (!response.ok) throw new Error('Could not fetch site settings.');
         
         const settingsData = await response.json();
