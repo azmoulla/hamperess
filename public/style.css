@@ -1,5 +1,12 @@
 /* FILE: public/input.css (Consolidated and Final Version) */
-
+html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    overflow-x: hidden; /* Prevents side-to-side scrolling */
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+    overscroll-behavior-y: none; /* Prevents "pull to refresh" if you want a cleaner app feel */
+}
 *, ::before, ::after {
   --tw-border-spacing-x: 0;
   --tw-border-spacing-y: 0;
@@ -1693,8 +1700,7 @@ main > #page-list {
   color: var(--text-light);
   padding: 0.5rem 1rem;
   font-size: 0.8rem;
-  position: sticky;
-  top: 0;
+  
   z-index: 1000;
 }
 
@@ -1716,16 +1722,13 @@ main > #page-list {
 .main-header {
   background: #fff;
   padding: 0 1rem;
-  position: sticky;
-  top: 2.5rem;
-  z-index: 999;
+  
+  
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-  transition: transform 0.3s ease-in-out;
+ 
 }
 
-body.hide-header .main-header {
-  transform: translateY(-101%);
-}
+
 
 .header-content-wrapper {
   display: flex;
@@ -5703,4 +5706,306 @@ body.product-list-active .search-container {
   .md\:grid-cols-3 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
+#confirmation-modal-overlay {
+    z-index: 10000 !important; /* Force it to be on top of everything */
+}/* 🔴 RED DOT: Force Modal to the absolute front */
+#confirmation-modal-overlay {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    background: rgba(0, 0, 0, 0.85) !important;
+    z-index: 2147483647 !important; /* Maximum 32-bit Integer */
+    display: none; /* Controlled by JS */
+    justify-content: center;
+    align-items: center;
+}
+
+#confirmation-modal {
+    background: white !important;
+    z-index: 2147483648 !important;
+    position: relative !important;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+/* --- SHOP LAYOUT (Desktop Default) --- */
+.shop-layout {
+    display: flex;
+    gap: 2rem;
+    align-items: flex-start;
+    position: relative;
+}
+
+.shop-sidebar {
+    width: 250px;
+    flex-shrink: 0;
+    background: #fff;
+    padding-right: 1rem;
+    border-right: 1px solid #eee;
+    transition: transform 0.3s ease-in-out;
+}
+
+/* Sidebar Header (Hidden on Desktop) */
+.sidebar-header {
+    display: none; 
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+}
+
+/* --- MOBILE DRAWER (Tablets & Phones) --- */
+@media (max-width: 900px) {
+    .shop-layout {
+        display: block; /* Stack vertically */
+    }
+
+    .shop-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 85%; /* Cover most of the screen */
+        max-width: 320px;
+        background: #ffffff;
+        z-index: 2000; /* On top of everything */
+        padding: 1.5rem;
+        box-shadow: 2px 0 15px rgba(0,0,0,0.2);
+        transform: translateX(-100%); /* Hide off-screen by default */
+        overflow-y: auto; /* Scrollable inside */
+    }
+
+    .shop-sidebar.active {
+        transform: translateX(0); /* Slide in */
+    }
+
+    .sidebar-header {
+        display: flex; /* Show title and close button on mobile */
+    }
+
+    /* Dimmed Background Overlay */
+    .sidebar-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 1999;
+    }
+    .sidebar-overlay.active {
+        display: block;
+    }
+}
+
+/* Filter Checkbox Styling */
+.facet-label {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: #4a5568;
+}
+
+.facet-label input[type="checkbox"] {
+    margin-right: 0.75rem;
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary-color, #2c3e50);
+}
+/* 1. Hide the sidebar off-screen by default */
+#shop-sidebar {
+    position: fixed;
+    top: 0;
+    left: -300px; /* Hide it to the left */
+    width: 280px;
+    height: 100%;
+    background-color: #ffffff;
+    z-index: 1000; /* Ensure it sits on top of everything */
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    transition: left 0.3s ease-in-out; /* Smooth sliding animation */
+    padding: 20px;
+    overflow-y: auto;
+}
+
+/* 2. When JavaScript adds the 'active' class, slide it in */
+#shop-sidebar.active {
+    left: 0;
+}
+
+/* 3. The dark overlay background */
+#shop-sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 999; /* Just behind the sidebar */
+    display: none; /* Hidden by default */
+}
+
+/* 4. Show overlay when active */
+#shop-sidebar-overlay.active {
+    display: block;
+}
+
+/* 5. Style the Filter Trigger Button (Ensure this button exists in your HTML) */
+#mobile-filter-btn {
+    display: inline-block; /* Make sure it's visible */
+    margin-bottom: 15px;
+    padding: 10px 20px;
+    background-color: #333;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+}
+/* --- 1. THE MAIN HEADER TRANSITION --- */
+/* We prepare the main header to slide up and out */
+.main-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1); /* Luxury easing */
+    will-change: transform;
+}
+
+/* The class JS will add to hide it */
+.main-header.header-hidden {
+    transform: translateY(-100%);
+}
+
+/* --- 2. THE GHOST HEADER (Glassmorphism) --- */
+.ghost-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 49; /* Just under the main header if both were visible */
+    background: rgba(255, 255, 255, 0.85); /* Milky white transparency */
+    backdrop-filter: blur(16px) saturate(180%); /* The "Frosted Glass" effect */
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03);
+    
+    transform: translateY(-120%); /* Hidden Upwards */
+    transition: transform 0.3s cubic-bezier(0.2, 0.0, 0.2, 1);
+}
+
+/* The class JS will add to show it */
+.ghost-header.ghost-visible {
+    transform: translateY(0);
+}
+
+.ghost-container {
+    padding: 12px 16px 8px 16px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* --- 3. GHOST INTERNAL LAYOUT --- */
+.ghost-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.ghost-title {
+    font-family: 'Lora', serif;
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: #1a1a1a;
+    opacity: 0; /* Fade in slightly later */
+    transform: translateY(5px);
+    transition: all 0.3s ease 0.1s;
+}
+
+.ghost-header.ghost-visible .ghost-title {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.ghost-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.ghost-icon-btn {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: #444;
+    cursor: pointer;
+}
+
+.ghost-pill-btn {
+    background: #111; /* Luxury Black */
+    color: white;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 50px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+    transition: transform 0.1s;
+}
+
+.ghost-pill-btn:active {
+    transform: scale(0.95); /* Tactile press effect */
+}
+
+/* --- 4. THE HORIZONTAL VIBE SCROLLER --- */
+.vibe-scroller {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 4px; /* Space for scrollbar hide */
+    -webkit-overflow-scrolling: touch; /* Smooth momentum scrolling on iOS */
+    scrollbar-width: none; /* Firefox hide scrollbar */
+}
+
+.vibe-scroller::-webkit-scrollbar {
+    display: none; /* Chrome/Safari hide scrollbar */
+}
+
+.vibe-track {
+    display: flex;
+    gap: 10px;
+    white-space: nowrap;
+}
+
+.vibe-chip {
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    padding: 6px 14px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    color: #333;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+}
+
+.vibe-chip:hover {
+    background: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    transform: translateY(-1px);
+}
+
+.vibe-chip.active {
+    background: #111;
+    color: white;
+    border-color: #111;
 }

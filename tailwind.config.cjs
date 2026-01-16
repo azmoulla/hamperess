@@ -1,15 +1,13 @@
-/** @type {import('tailwindcss').Config} */
+// FILE: tailwind.config.cjs (Definitive Version)
 module.exports = {
-content: [
-    "./index.html",          // 1. Matches index.html in the root
-    "./*.js",                // 2. Matches all JS files in the root (app.js, auth.js, etc.) but NOT subfolders
-    "./public/**/*.html"     // 3. Matches any HTML files still inside public
+  content: [
+    './public/**/*.html', // Scans all .html files in the public folder
+    './public/**/*.js',   // Scans all .js files in the public folder
+    './public/**/*.json',
+    './public/**/*.css',
   ],
   theme: {
     extend: {},
   },
   plugins: [],
-
 }
-
-

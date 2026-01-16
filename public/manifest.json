@@ -4,8 +4,9 @@
     "description": "Exquisite Luxury Hampers delivered to your doorstep. Browse and order even offline.",
     "start_url": "/",
     "display": "standalone",
-    "background_color": "#FFFBEB",
-    "theme_color": "#A0522D",
+    "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "orientation": "portrait-primary",
     "icons": [
         {
             "src": "https://placehold.co/48x48/FFD700/000000?text=LH",
@@ -52,6 +53,6 @@
             "sizes": "512x512",
             "type": "image/png"
         }
-    ],
-    "orientation": "portrait"
+    ]
+    
 }

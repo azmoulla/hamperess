@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luxury Hampers - Admin Panel</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="admin.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/javascript/javascript.min.js"></script>
+</head>
+<body class="text-gray-800">
+
+    <div id="app-container" class="min-h-screen">
+        <div id="admin-notification" class="p-4 rounded-md shadow-lg text-white text-sm font-semibold" style="z-index: 100;">
+            <span id="admin-notification-message"></span>
+        </div>
+        
+        <div id="admin-confirm-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 h-full w-full flex items-center justify-center" style="z-index: 110;">
+            <div class="relative mx-auto p-5 border w-full max-w-sm shadow-lg rounded-md bg-white">
+                <div class="mt-3 text-center">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900">Confirmation</h3>
+                    <div class="mt-2 px-7 py-3"><p id="admin-confirm-message" class="text-sm text-gray-500"></p></div>
+                    <div class="items-center px-4 py-3 space-x-2">
+                        <button id="admin-confirm-ok-btn" class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md w-auto hover:bg-blue-700">OK</button>
+                        <button id="admin-confirm-cancel-btn" class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto hover:bg-gray-300">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="cancel-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center">
+            <div class="relative mx-auto p-5 border w-full max-w-lg shadow-lg rounded-md bg-white">
+                <div class="mt-3 text-center">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900" id="cancel-modal-title">Cancel Order</h3>
+                    <div id="cancel-modal-body" class="mt-2 px-7 py-3 text-left"><p class="text-sm text-gray-500 mb-4">Select items to cancel...</p><form id="cancellation-form"></form></div>
+                    <div id="cancel-modal-spinner" class="hidden justify-center items-center py-4"><div class="spinner"></div></div>
+                    <div class="items-center px-4 py-3 space-x-2"><button id="cancel-selected-btn" class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md w-auto hover:bg-blue-700">Cancel Selected</button><button id="cancel-full-btn" class="px-4 py-2 bg-red-600 text-white text-base font-medium rounded-md w-auto hover:bg-red-700">Cancel Entire Order</button><button id="close-cancel-modal-btn" class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto hover:bg-gray-300">Close</button></div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="issue-credit-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 h-full w-full flex items-center justify-center" style="z-index: 120;">
+            <div class="relative mx-auto p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
+                <div class="mt-3">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 text-center">Issue Store Credit</h3>
+                    <div class="mt-4 px-4 py-3">
+                        <p class="text-sm text-gray-600 mb-4">Generating a single-use voucher for return <strong id="modal-return-id"></strong> for customer <strong id="modal-customer-email"></strong>.</p>
+                        <form id="issue-credit-form">
+                            <label for="credit-value-input" class="block text-sm font-medium text-gray-700">Voucher Value (£)</label>
+                            <input type="number" id="credit-value-input" step="0.01" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                            <input type="hidden" id="modal-hidden-return-id"><input type="hidden" id="modal-hidden-return-path"><input type="hidden" id="modal-hidden-customer-email">
+                        </form>
+                    </div>
+                    <div id="credit-modal-spinner" class="hidden justify-center items-center py-4"><div class="spinner"></div></div>
+                    <div class="items-center px-4 py-3 space-x-2 text-right">
+                        <button id="modal-cancel-btn" class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto hover:bg-gray-300">Cancel</button>
+                        <button id="modal-generate-btn" class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md w-auto hover:bg-blue-700">Generate Voucher</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="login-section" class="flex items-center justify-center min-h-screen">
+            <div class="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
+                <h1 class="text-2xl font-bold text-center text-gray-800 mb-2">Admin Panel Login</h1>
+                <p class="text-center text-gray-500 mb-6">Access for authorized personnel only.</p>
+                <form id="login-form">
+                    <div class="mb-4"><label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email Address</label><input type="email" id="email" required class="w-full px-3 py-2 border border-gray-300 rounded-md"></div>
+                    <div class="mb-6"><label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label><input type="password" id="password" required class="w-full px-3 py-2 border border-gray-300 rounded-md"></div>
+                    <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700">Login</button>
+                </form>
+                <div id="login-error" class="mt-4 text-center text-red-600"></div>
+            </div>
+        </div>
+
+        <div id="dashboard-section" class="hidden">
+            <div class="flex h-screen bg-gray-100 font-sans">
+                
+                <nav id="admin-sidebar" class="w-64 bg-gray-800 text-white flex flex-col shrink-0">
+                    <div class="p-6 text-2xl font-bold border-b border-gray-700">Admin Menu</div>
+                    <ul class="flex-grow">
+                       <ul class="flex-grow">
+    <li><a href="#" class="admin-nav-link active" data-page="page-search">Search</a></li>
+    <li><a href="#" class="admin-nav-link" data-page="page-pos">Create Order (POS)</a></li>
+    <li><a href="#" class="admin-nav-link" data-page="page-vouchers">Voucher Management</a></li>
+    <li><a href="#" class="admin-nav-link" data-page="page-products">Product Management</a></li>
+    <li><a href="#" class="admin-nav-link" data-page="page-components">Hamper Components</a></li>
+    <li><a href="#" class="admin-nav-link" data-page="page-fulfillment">Fulfillment Center</a></li>
+    
+    <li>
+        <a href="#" class="admin-nav-link-parent">
+            <span>Site & Content</span>
+            <i class="fa-solid fa-chevron-down"></i>
+        </a>
+        <ul class="admin-submenu hidden">
+            <li><a href="#" class="admin-nav-link" data-page="page-admin-tags">Search Tags</a></li>
+            <li><a href="#" class="admin-nav-link" data-page="page-admin-settings">Site Settings</a></li>
+            <li><a href="#" class="admin-nav-link" data-page="page-menu">Menu Management</a></li>
+            <li><a href="#" class="admin-nav-link" data-page="page-admin-footer">Footer Editor</a></li>
+            <li><a href="#" class="admin-nav-link" data-page="page-admin-about-us">About Us</a></li>
+            <li><a href="#" class="admin-nav-link" data-page="page-admin-our-mission">Our Mission</a></li>
+            <li><a href="#" class="admin-nav-link" data-page="page-admin-privacy-policy">Privacy Policy</a></li>
+            <li><a href="#" class="admin-nav-link" data-page="page-admin-terms-conditions">Terms & Conditions</a></li>
+            <li><a href="#" class="admin-nav-link" data-page="page-admin-contact-us">Contact Us</a></li>
+            <li><a href="#" class="admin-nav-link" data-page="page-admin-faqs">FAQs</a></li>
+            <li><a href="#" class="admin-nav-link" data-page="page-admin-delivery-info">Delivery Info</a></li>
+        </ul>
+    </li>
+    
+</ul>
+                    </ul>
+                    <div class="p-4 border-t border-gray-700">
+                        <button id="logout-btn" class="w-full text-left text-gray-400 hover:text-white">Logout</button>
+                    </div>
+                </nav>
+
+                <main class="flex-1 p-8 overflow-y-auto">
+                    
+                    <div id="page-search" class="admin-page bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Search Orders & Returns</h2>
+                        <form id="search-form" class="mb-6 space-y-4">
+                            <div class="flex items-center space-x-6">
+                                <label class="flex items-center"><input type="radio" name="search-type" value="orders" checked class="h-4 w-4"> <span class="ml-2">Orders</span></label>
+                                <label class="flex items-center"><input type="radio" name="search-type" value="returns" class="h-4 w-4"> <span class="ml-2">Returns</span></label>
+                            </div>
+                            <div>
+                                <label for="search-input" class="block text-sm font-medium text-gray-700 mb-1">Search by Order ID or Customer Email</label>
+                                <div class="flex">
+                                    <input type="search" id="search-input" class="w-full flex-grow px-3 py-2 border border-gray-300 rounded-l-md">
+                                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-r-md hover:bg-blue-700">Search</button>
+                                </div>
+                            </div>
+                        </form>
+                        <div id="results-section">
+                            <div id="loader" class="hidden"></div>
+                            <div id="results-message">Enter a search term to begin.</div>
+                            <div id="results-table" class="hidden"></div>
+                        </div>
+                    </div>
+
+                    <div id="page-pos" class="admin-page bg-white p-8 rounded-lg shadow-md" style="display: none;">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Create New Order (POS)</h2>
+                        <form id="create-order-form" class="space-y-6">
+                           
+                            <div>
+                                <h3 class="font-semibold">Order Items</h3>
+                                <div id="pos-product-grid" class="mb-4"></div>
+                                <div id="order-items-summary" class="border rounded-md p-4 min-h-[100px]"><p class="text-gray-500">Click a product to add it to the order.</p></div>
+                                <div class="mt-4 pt-4 border-t">
+                                    <div class="space-y-2 text-right text-gray-700">
+                                        <div class="flex justify-between"><span>Subtotal:</span> <span id="order-subtotal">£0.00</span></div>
+                                        <div class="flex justify-between"><span>Delivery:</span> <span id="order-delivery">£0.00</span></div>
+                                        <div id="pos-discount-row" class="flex justify-between text-green-600 hidden"><span>Discount (<span id="pos-discount-code"></span>):</span><span id="pos-discount-amount">£0.00</span></div>
+                                        <div class="flex justify-between font-bold text-lg text-gray-900"><span>Total:</span> <span id="order-total">£0.00</span></div>
+                                        <p id="pos-warning-message" class="text-sm text-yellow-600 font-medium hidden"></p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                                <div>
+                                    <h3 class="font-semibold text-gray-700 mb-2">Discount Code</h3>
+                                    <div class="flex"><input type="text" id="pos-discount-input" placeholder="Enter code" class="flex-grow px-3 py-2 border border-gray-300 rounded-l-md"><button type="button" id="apply-discount-btn" class="bg-gray-600 text-white px-4 py-2 rounded-r-md hover:bg-gray-700">Apply</button></div>
+                                    <p id="pos-discount-message" class="text-sm mt-2"></p>
+                                </div>
+                                <div>
+                                    <h3 class="font-semibold text-gray-700 mb-2">Payment Details</h3>
+                                    <div>
+                                        <label for="payment-type" class="block text-sm font-medium text-gray-600">Payment Type</label>
+                                        <select id="payment-type" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                                            <option>External Card Reader</option><option>Card (Phone Payment)</option><option>Cash</option><option>Bank Transfer</option>
+                                        </select>
+                                    </div>
+                                    <div class="mt-4"><label for="transaction-id" class="block text-sm font-medium text-gray-600">Transaction ID</label><input type="text" id="transaction-id" placeholder="Paste ID from payment processor" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></div>
+                                </div>
+                            </div>
+                            <div class="mt-6 text-right"><button type="submit" class="px-6 py-3 bg-green-600 text-white font-bold rounded-md hover:bg-green-700">Create Order</button></div>
+                        </form>
+                    </div>
+                    <div id="page-admin-terms-conditions" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Terms & Conditions Page Content</h2>
+                        <form id="terms-conditions-form">
+                            <div class="space-y-6">
+                                <div>
+                                    <label for="terms-conditions-title-input" class="block text-sm font-medium text-gray-700">Page Title</label>
+                                    <input type="text" id="terms-conditions-title-input" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                                </div>
+                                <h3 class="text-xl font-semibold border-b pb-2">Content Sections</h3>
+                                <div id="terms-conditions-sections-container" class="space-y-4">
+                                    </div>
+                                <button type="button" id="add-terms-conditions-section-btn" class="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600">Add Section</button>
+                            </div>
+                            <div class="mt-6 text-right">
+                                <span id="terms-conditions-save-status" class="mr-4 text-sm font-medium text-gray-600"></span>
+                                <button type="submit" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700">Save Terms & Conditions</button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <div id="page-admin-contact-us" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        </div>
+                    <div id="page-admin-privacy-policy" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Privacy Policy Page Content</h2>
+                        <form id="privacy-policy-form">
+                            <div class="space-y-6">
+                                <div>
+                                    <label for="privacy-policy-title-input" class="block text-sm font-medium text-gray-700">Page Title</label>
+                                    <input type="text" id="privacy-policy-title-input" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                                </div>
+                                <h3 class="text-xl font-semibold border-b pb-2">Content Sections</h3>
+                                <div id="privacy-policy-sections-container" class="space-y-4">
+                                    </div>
+                                <button type="button" id="add-privacy-policy-section-btn" class="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600">Add Section</button>
+                            </div>
+                            <div class="mt-6 text-right">
+                                <span id="privacy-policy-save-status" class="mr-4 text-sm font-medium text-gray-600"></span>
+                                <button type="submit" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700">Save Privacy Policy</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div id="page-admin-settings" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Site Settings & Theming</h2>
+                        <form id="site-settings-form">
+                            <div class="space-y-6">
+                                <h3 class="text-xl font-semibold border-b pb-2">Colors & Typography</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="form-group"><label for="setting-primary-color">Primary Color</label><input type="color" id="setting-primary-color" required class="w-full h-10 mt-1"></div>
+                                    <div class="form-group"><label for="setting-cta-color">CTA Green Color</label><input type="color" id="setting-cta-color" required class="w-full h-10 mt-1"></div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="form-group"><label for="setting-font-headings">Font Family (Headings)</label><input type="text" id="setting-font-headings" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></div>
+                                    <div class="form-group"><label for="setting-font-body">Font Family (Body)</label><input type="text" id="setting-font-body" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></div>
+                                </div>
+
+                                <h3 class="text-xl font-semibold border-b pb-2">UX & Stock Behavior</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="form-group flex items-center pt-2"><input type="checkbox" id="setting-enable-quickview" class="h-4 w-4"><label for="setting-enable-quickview" class="ml-2">Enable Quick View Button</label></div>
+                                    <div class="form-group flex items-center pt-2"><input type="checkbox" id="setting-show-low-stock" class="h-4 w-4"><label for="setting-show-low-stock" class="ml-2">Show 'Low Stock' Warning</label></div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="form-group">
+                                        <label for="setting-low-stock-threshold">Low Stock Threshold (Quantity)</label>
+                                        <input type="number" id="setting-low-stock-threshold" required class="w-full mt-1 px-3 py-2 border rounded-md">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="setting-cart-persistence-days">Cart Persistence (Days)</label>
+                                        <input type="number" id="setting-cart-persistence-days" required class="w-full mt-1 px-3 py-2 border rounded-md" value="30">
+                                    </div>
+                                </div>
+                                <div class="form-group flex items-center pt-2">
+                                    <input type="checkbox" id="setting-show-newsletter-popup" class="h-4 w-4">
+                                    <label for="setting-show-newsletter-popup" class="ml-2">Enable Newsletter Popup</label>
+                                </div>
+                               
+                                <h3 class="text-xl font-semibold border-b pb-2">Delivery & Legal Compliance</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="form-group"><label for="setting-free-delivery-threshold">Free Delivery Threshold (£)</label><input type="number" id="setting-free-delivery-threshold" step="0.01" required class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                    <div class="form-group"><label for="setting-base-delivery-charge">Base Delivery Charge (£)</label><input type="number" id="setting-base-delivery-charge" step="0.01" required class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="form-group"><label for="setting-return-window-days">Return Window (Days)</label><input type="number" id="setting-return-window-days" required class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                    <div class="form-group"><label for="setting-currency-symbol">Currency Symbol (e.g., £, $)</label><input type="text" id="setting-currency-symbol" maxlength="3" required class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="setting-cookie-message">Cookie Consent Message</label>
+                                    <textarea id="setting-cookie-message" rows="3" required class="w-full mt-1 px-3 py-2 border rounded-md"></textarea>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-6 text-right">
+                                <span id="site-settings-save-status" class="mr-4 text-sm font-medium text-gray-600"></span>
+                                <button type="submit" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700">Save Site Settings</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div id="page-admin-delivery-info" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Edit Delivery Info Page</h2>
+                        <div class="p-4 mb-6 border-l-4 border-blue-400 bg-blue-50">
+                            <h4 class="font-semibold text-blue-800">Live Delivery Rules</h4>
+                            <p class="text-sm text-blue-700">
+                                These values are set in **Site Settings** and are shown here for your reference when writing content.
+                            </p>
+                            <ul class="mt-2 text-sm text-blue-700 list-disc list-inside">
+                                <li>Base Delivery Charge: <strong id="delivery-live-charge">Loading...</strong></li>
+                                <li>Free Delivery Threshold: <strong id="delivery-live-threshold">Loading...</strong></li>
+                            </ul>
+                        </div>
+                        <form id="delivery-info-form" class="admin-form space-y-6">
+                        
+                        <form id="delivery-info-form" class="admin-form space-y-6">
+
+                            <div class="form-group">
+                                <label for="delivery-info-title" class="block text-sm font-medium text-gray-700 mb-1">Page Title</label>
+                                <input type="text" id="delivery-info-title" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+
+                            <hr class="border-gray-300">
+
+                            <div class="flex justify-between items-center">
+                                <h3 class="text-lg font-semibold text-gray-700">Page Sections (<span id="delivery-section-count">0</span>)</h3>
+                                <button type="button" id="add-delivery-info-section-btn" class="px-3 py-1.5 bg-gray-600 text-white text-xs font-medium rounded-md hover:bg-gray-700 flex items-center space-x-1">
+                                    <i class="fa-solid fa-plus text-xs"></i> <span>Add Section</span>
+                                </button>
+                            </div>
+
+                            <div id="delivery-info-sections-container" class="space-y-6">
+                                <p class="text-gray-500">Loading sections...</p>
+                            </div>
+
+                            <hr class="border-gray-300">
+
+                            <div class="flex items-center justify-end space-x-4">
+                                <p id="delivery-info-save-status" class="save-status text-sm font-medium"></p>
+                                <button type="submit" class="px-6 py-2 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 flex items-center justify-center min-w-[120px]">
+                                    <span class="btn-text">Save Content</span>
+                                    <div class="spinner hidden ml-2"></div>
+                                </button>
+                            </div>
+
+                        </form>
+                    </div>
+                    <div id="page-vouchers" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <div class="flex justify-between items-center mb-6"><h2 class="text-2xl font-bold text-gray-800">Voucher Management</h2></div>
+                        <div class="mb-8 p-4 border rounded-md bg-gray-50">
+                            <h3 class="font-semibold mb-2">Issue a Stand-Alone Voucher</h3>
+                            <p class="text-sm text-gray-500 mb-4">Use this for goodwill gestures or marketing. It will not be linked to a return.</p>
+                            <form id="create-standalone-voucher-form" class="flex items-end space-x-4">
+                                <div><label for="standalone-email" class="block text-sm font-medium">Customer Email</label><input type="email" id="standalone-email" required class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                <div><label for="standalone-value" class="block text-sm font-medium">Voucher Value (£)</label><input type="number" id="standalone-value" step="0.01" required class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 h-11">Generate</button>
+                            </form>
+                        </div>
+                        <h3 class="font-semibold mb-4">Voucher History</h3>
+                        <div id="vouchers-table-container"></div>
+                    </div>
+
+                    <div id="page-products" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold text-gray-800">Product Management</h2>
+                            <button id="create-product-btn" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">Create New Product</button>
+                        </div>
+                        <div id="products-table-container"></div>
+                    </div>
+                    
+                    <div id="page-components" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold">Hamper Component Management</h2>
+                            <button id="create-component-btn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Create New Component</button>
+                        </div>
+                        <div id="components-table-container">
+                        </div>
+                    </div>
+                    
+                    <div id="page-fulfillment" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold mb-4">Fulfillment Center</h2>
+
+                        <div class="border-b border-gray-200">
+                            <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                                <button class="fulfillment-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-blue-500 text-blue-600" data-tab="picking">
+                                    1. Aggregated Picking List
+                                </button>
+                                <button class="fulfillment-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300" data-tab="packing">
+                                    2. Pack Individual Orders
+                                </button>
+                            </nav>
+                        </div>
+
+                        <div class="py-6">
+                            <div id="tab-content-picking" class="fulfillment-tab-content">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-xl font-semibold">Aggregated Picking List</h3>
+                                    <button id="print-picking-list-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Print List</button>
+                                </div>
+                                
+                                <div class="bg-gray-50 p-4 rounded-lg border mb-6">
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                                        <div>
+                                            <label for="picking-list-start-date" class="block text-sm font-medium text-gray-700">Start Date</label>
+                                            <input type="date" id="picking-list-start-date" class="mt-1 block w-full p-2 border border-gray-300 rounded-md">
+                                        </div>
+                                        <div>
+                                            <label for="picking-list-end-date" class="block text-sm font-medium text-gray-700">End Date</label>
+                                            <input type="date" id="picking-list-end-date" class="mt-1 block w-full p-2 border border-gray-300 rounded-md">
+                                        </div>
+                                        <button id="picking-list-filter-btn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 w-full md:w-auto">Apply Filter</button>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-2">Leave dates blank to show all unshipped orders.</p>
+                                </div>
+                                
+                                <div id="picking-list-container"></div>
+                            </div>
+
+                            <div id="tab-content-packing" class="fulfillment-tab-content hidden">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-xl font-semibold">Orders to Pack</h3>
+                                    <span id="pack-order-count" class="px-3 py-1 text-sm font-semibold bg-gray-200 text-gray-800 rounded-full"></span>
+                                </div>
+                                <p class="text-sm text-gray-600 mb-4">This list shows all orders in 'Pending' or 'Processing' status that need to be packed.</p>
+                                <div id="pack-orders-container" class="space-y-4">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="page-admin-our-mission" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Our Mission Page Content</h2>
+                        <form id="our-mission-form">
+                            <div class="space-y-6">
+                                <div>
+                                    <label for="our-mission-title-input" class="block text-sm font-medium text-gray-700">Page Title</label>
+                                    <input type="text" id="our-mission-title-input" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                                </div>
+                                <h3 class="text-xl font-semibold border-b pb-2">Content Sections</h3>
+                                <div id="our-mission-sections-container" class="space-y-4">
+                                    </div>
+                                <button type="button" id="add-our-mission-section-btn" class="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600">Add Section</button>
+                            </div>
+                            <div class="mt-6 text-right">
+                                <span id="our-mission-save-status" class="mr-4 text-sm font-medium text-gray-600"></span>
+                                <button type="submit" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700">Save Our Mission Page</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div id="page-admin-about-us" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">About Us Page Content</h2>
+                        <form id="about-us-form">
+                            <div class="space-y-6">
+                                <div>
+                                    <label for="about-us-title-input" class="block text-sm font-medium text-gray-700">Page Title</label>
+                                    <input type="text" id="about-us-title-input" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                                </div>
+                                <h3 class="text-xl font-semibold border-b pb-2">Content Sections</h3>
+                                <div id="about-us-sections-container" class="space-y-4">
+                                    </div>
+                                <button type="button" id="add-about-us-section-btn" class="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600">Add Section</button>
+                            </div>
+                            <div class="mt-6 text-right">
+                                <span id="about-us-save-status" class="mr-4 text-sm font-medium text-gray-600"></span>
+                                <button type="submit" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700">Save About Us Page</button>
+                            </div>
+                        </form>
+                    </div>
+
+                   <div id="page-admin-contact-us" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Edit Contact Us Page</h2>
+                        <form id="contact-us-form" class="admin-form space-y-6">
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div class="form-group">
+                                    <label for="contact-us-title" class="block text-sm font-medium text-gray-700 mb-1">Page Title</label>
+                                    <input type="text" id="contact-us-title" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                                </div>
+                                <div class="form-group">
+                                    <label for="contact-us-subtitle" class="block text-sm font-medium text-gray-700 mb-1">Page Subtitle</label>
+                                    <input type="text" id="contact-us-subtitle" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="contact-us-map-path" class="block text-sm font-medium text-gray-700 mb-1">Map Image Path (relative to assets)</label>
+                                <input type="text" id="contact-us-map-path" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., images/map_placeholder.png">
+                            </div>
+
+                            <hr class="border-gray-300">
+
+                            <div class="flex justify-between items-center">
+                                <h3 class="text-lg font-semibold text-gray-700">Contact Details (<span id="contact-detail-count">0</span>)</h3>
+                                <button type="button" id="add-contact-detail-btn" class="px-3 py-1.5 bg-gray-600 text-white text-xs font-medium rounded-md hover:bg-gray-700 flex items-center space-x-1">
+                                    <i class="fa-solid fa-plus text-xs"></i> <span>Add Detail</span>
+                                </button>
+                            </div>
+                            <div id="contact-details-container" class="space-y-4">
+                                <p class="text-gray-500">Loading contact details...</p>
+                            </div>
+
+                            <hr class="border-gray-300">
+
+                            <h3 class="text-lg font-semibold text-gray-700">Opening Hours</h3>
+                            <div class="form-group">
+                                <label for="opening-hours-title" class="block text-sm font-medium text-gray-700 mb-1">Hours Section Title</label>
+                                <input type="text" id="opening-hours-title" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div class="form-group">
+                                <label for="opening-hours-list" class="block text-sm font-medium text-gray-700 mb-1">Hours List (One item per line)</label>
+                                <textarea id="opening-hours-list" rows="4" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., Monday - Friday: 9am - 5pm"></textarea>
+                            </div>
+
+                            <hr class="border-gray-300">
+
+                            <div class="flex items-center justify-end space-x-4">
+                                <p id="contact-us-save-status" class="save-status text-sm font-medium"></p>
+                                <button type="submit" class="px-6 py-2 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 flex items-center justify-center min-w-[120px]">
+                                    <span class="btn-text">Save Content</span>
+                                    <div class="spinner hidden ml-2"></div>
+                                </button>
+                            </div>
+
+                        </form>
+                    </div>
+                        <div id="page-admin-faqs" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Edit FAQs Page</h2>
+                        <form id="faqs-form" class="admin-form space-y-6">
+
+                            <div class="flex justify-between items-center">
+                                <h3 class="text-lg font-semibold text-gray-700">FAQ Items (<span id="faq-item-count">0</span>)</h3>
+                                <button type="button" id="add-faq-item-btn" class="px-3 py-1.5 bg-gray-600 text-white text-xs font-medium rounded-md hover:bg-gray-700 flex items-center space-x-1">
+                                    <i class="fa-solid fa-plus text-xs"></i> <span>Add FAQ</span>
+                                </button>
+                            </div>
+
+                            <div id="faq-items-container" class="space-y-6">
+                                <p class="text-gray-500">Loading FAQs...</p>
+                            </div>
+
+                            <hr class="border-gray-300">
+
+                            <div class="flex items-center justify-end space-x-4">
+                                <p id="faqs-save-status" class="save-status text-sm font-medium"></p>
+                                <button type="submit" class="px-6 py-2 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 flex items-center justify-center min-w-[120px]">
+                                    <span class="btn-text">Save FAQs</span>
+                                    <div class="spinner hidden ml-2"></div>
+                                </button>
+                            </div>
+
+                        </form>
+                    </div>
+                    <div id="page-menu" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">Header Menu Management</h2>
+                        <p class="text-sm text-gray-600 mb-4">Edit the navigation structure directly in JSON format. Be careful with syntax, as errors can break the site navigation. Use a JSON validator if unsure.</p>
+                        <form id="menu-form">
+                            <textarea id="menu-json-editor" class="w-full h-96 border border-gray-300 rounded-md p-2 font-mono text-sm"></textarea>
+                            <div id="menu-json-error" class="hidden mt-2 p-3 bg-red-50 border border-red-200 text-sm text-red-700 rounded-md"></div>
+                            <div class="mt-4 text-right">
+                                <button type="submit" id="save-menu-btn" class="px-6 py-2 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700">
+                                    Save Menu
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    <div id="page-admin-tags" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+    <h2 class="text-2xl font-bold text-gray-800 mb-6">Manage Search Tags</h2>
+    <p class="text-sm text-gray-600 mb-6">Create the tags that will be available filters on your store.</p>
+    
+    <div id="tags-management-container" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="tag-section bg-gray-50 p-4 rounded border">
+            <h3 class="font-bold mb-3">Dietary</h3>
+            <div class="flex gap-2 mb-3">
+                <input type="text" id="new-tag-dietary" class="border p-2 rounded text-sm w-full" placeholder="e.g. Vegan">
+                <button class="add-tag-btn bg-blue-600 text-white px-3 rounded" data-category="dietary">+</button>
+            </div>
+            <ul id="list-tags-dietary" class="space-y-2 text-sm"></ul>
+        </div>
+
+        <div class="tag-section bg-gray-50 p-4 rounded border">
+            <h3 class="font-bold mb-3">Occasion</h3>
+            <div class="flex gap-2 mb-3">
+                <input type="text" id="new-tag-occasion" class="border p-2 rounded text-sm w-full" placeholder="e.g. Birthday">
+                <button class="add-tag-btn bg-blue-600 text-white px-3 rounded" data-category="occasion">+</button>
+            </div>
+            <ul id="list-tags-occasion" class="space-y-2 text-sm"></ul>
+        </div>
+
+        <div class="tag-section bg-gray-50 p-4 rounded border">
+            <h3 class="font-bold mb-3">Contents</h3>
+            <div class="flex gap-2 mb-3">
+                <input type="text" id="new-tag-contents" class="border p-2 rounded text-sm w-full" placeholder="e.g. Wine">
+                <button class="add-tag-btn bg-blue-600 text-white px-3 rounded" data-category="contents">+</button>
+            </div>
+            <ul id="list-tags-contents" class="space-y-2 text-sm"></ul>
+        </div>
+    </div>
+    
+    <div class="mt-6 text-right">
+        <button id="save-tags-btn" class="px-6 py-3 bg-green-600 text-white font-bold rounded-md hover:bg-green-700">Save All Tags</button>
+    </div>
+</div>
+                </main>
+            </div>
+        </div>
+        <div id="page-menu" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+    </div>
+
+<div id="page-admin-footer" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+    <h2 class="text-2xl font-bold text-gray-800 mb-6">Edit Footer Content</h2>
+    <form id="footer-editor-form" class="admin-form space-y-8">
+
+        <div class="form-section-container">
+            <h3 class="text-xl font-semibold border-b pb-2 mb-4">Company Info</h3>
+            <div class="form-group">
+                <label for="footer-company-title">Title</label>
+                <input type="text" id="footer-company-title" class="w-full mt-1 px-3 py-2 border rounded-md">
+            </div>
+            <div class="form-group">
+                <label for="footer-company-desc">Description</label>
+                <textarea id="footer-company-desc" rows="3" class="w-full mt-1 px-3 py-2 border rounded-md"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Social Links</label>
+                <div id="footer-social-links-container" class="space-y-3 mt-1">
+                    </div>
+                <button type="button" id="add-footer-social-link-btn" class="btn btn-secondary btn-sm mt-3">Add Social Link</button>
+            </div>
+        </div>
+
+        <div class="form-section-container">
+            <h3 class="text-xl font-semibold border-b pb-2 mb-4">Quick Links</h3>
+            <div class="form-group">
+                <label for="footer-quicklinks-title">Title</label>
+                <input type="text" id="footer-quicklinks-title" class="w-full mt-1 px-3 py-2 border rounded-md">
+            </div>
+            <div class="form-group">
+                <label>Links</label>
+                <div id="footer-quicklinks-container" class="space-y-3 mt-1">
+                    </div>
+                <button type="button" id="add-footer-quicklink-btn" class="btn btn-secondary btn-sm mt-3">Add Quick Link</button>
+            </div>
+        </div>
+
+        <div class="form-section-container">
+            <h3 class="text-xl font-semibold border-b pb-2 mb-4">Legal Links</h3>
+            <div class="form-group">
+                <label for="footer-legal-title">Title</label>
+                <input type="text" id="footer-legal-title" class="w-full mt-1 px-3 py-2 border rounded-md">
+            </div>
+            <div class="form-group">
+                <label>Links</label>
+                <div id="footer-legal-links-container" class="space-y-3 mt-1">
+                    </div>
+                <button type="button" id="add-footer-legal-link-btn" class="btn btn-secondary btn-sm mt-3">Add Legal Link</button>
+            </div>
+        </div>
+
+        <div class="form-section-container">
+            <h3 class="text-xl font-semibold border-b pb-2 mb-4">Contact Info</h3>
+            <div class="form-group">
+                <label for="footer-contact-title">Title</label>
+                <input type="text" id="footer-contact-title" class="w-full mt-1 px-3 py-2 border rounded-md">
+            </div>
+            <div class="form-group">
+                <label for="footer-contact-phone">Phone</label>
+                <input type="text" id="footer-contact-phone" class="w-full mt-1 px-3 py-2 border rounded-md">
+            </div>
+            <div class="form-group">
+                <label for="footer-contact-email">Email</label>
+                <input type="email" id="footer-contact-email" class="w-full mt-1 px-3 py-2 border rounded-md">
+            </div>
+            <div class="form-group">
+                <label for="footer-contact-hours">Opening Hours (One per line)</label>
+                <textarea id="footer-contact-hours" rows="3" class="w-full mt-1 px-3 py-2 border rounded-md"></textarea>
+            </div>
+        </div>
+
+        <div class="form-section-container">
+            <h3 class="text-xl font-semibold border-b pb-2 mb-4">"We Accept" Section</h3>
+            <div class="form-group">
+                <label for="footer-accept-title">Title</label>
+                <input type="text" id="footer-accept-title" class="w-full mt-1 px-3 py-2 border rounded-md">
+            </div>
+            <div class="form-group">
+                <label for="footer-accept-images">Image URLs (One URL per line)</label>
+                <textarea id="footer-accept-images" rows="4" class="w-full mt-1 px-3 py-2 border rounded-md"></textarea>
+            </div>
+        </div>
+
+        <div class="mt-8 text-right">
+            <span id="footer-editor-save-status" class="mr-4 text-sm font-medium text-gray-600"></span>
+            <button type="submit" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700">Save Footer Content</button>
+        </div>
+
+    </form>
+</div>
+<div id="page-fulfillment" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
+    </div>
+        
+        <div id="product-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center">
+            <div class="relative mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+                <div class="mt-3">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 text-center" id="product-modal-title">Create New Product</h3>
+                    <form id="product-form" class="mt-4 space-y-4">
+                        <input type="hidden" id="product-id-input">
+                        
+                        <div>
+                            <label for="product-title-input" class="block text-sm font-medium text-gray-700">Title</label>
+                            <input type="text" id="product-title-input" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                        </div>
+                        
+                        <div>
+                            <label for="product-bullets-input" class="block text-sm font-medium text-gray-700">Description (Bullet Points - One per line)</label>
+                            <textarea id="product-bullets-input" rows="4" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="Feature 1...&#10;Feature 2...&#10;Feature 3..."></textarea>
+                        </div>
+                        
+                        <div>
+                            <label for="product-description-input" class="block text-sm font-medium text-gray-700">Professional Description (Paragraph)</label>
+                            <textarea id="product-description-input" rows="4" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></textarea>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="product-price-input" class="block text-sm font-medium text-gray-700">Price (£)</label>
+                                <input type="number" id="product-price-input" step="0.01" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <label for="product-saleprice-input" class="block text-sm font-medium text-gray-700">Sale Price (£) (Optional)</label>
+                                <input type="number" id="product-saleprice-input" step="0.01" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., 49.99">
+                            </div>
+                            <div>
+                                <label for="product-stock-input" class="block text-sm font-medium text-gray-700">Stock</label>
+                                <input type="number" id="product-stock-input" step="1" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <label for="product-rating-input" class="block text-sm font-medium text-gray-700">Rating (0-5)</label>
+                                <input type="number" id="product-rating-input" step="0.1" min="0" max="5" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., 4.5">
+                            </div>
+                            <div>
+                                <label for="product-reviewcount-input" class="block text-sm font-medium text-gray-700">Review Count</label>
+                                <input type="number" id="product-reviewcount-input" step="1" min="0" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., 128">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="product-category-input" class="block text-sm font-medium text-gray-700">Category</label>
+                                <input type="text" id="product-category-input" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="form-group">
+    <label for="product-tag" class="block text-sm font-medium text-gray-700">Tag (e.g., BESTSELLER, SALE)</label>
+    <input type="text" id="product-tag" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="Single tag">
+</div>
+
+<div class="form-group">
+    <label for="product-dietary-tags" class="block text-sm font-medium text-gray-700">Dietary Tags (comma-separated)</label>
+    <input type="text" id="product-dietary-tags" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g. Vegan, Gluten Free">
+</div>
+
+<div class="form-group">
+    <label for="product-occasion-tags" class="block text-sm font-medium text-gray-700">Occasion Tags (comma-separated)</label>
+    <input type="text" id="product-occasion-tags" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g. Birthday, Anniversary">
+</div>
+
+<div class="form-group">
+    <label for="product-contents-tags" class="block text-sm font-medium text-gray-700">Contents Tags (comma-separated)</label>
+    <input type="text" id="product-contents-tags" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g. Alcohol, Chocolate">
+</div>
+                        </div>
+                        
+                        <div>
+                            <label for="product-images-input" class="block text-sm font-medium text-gray-700">Image URLs (comma-separated)</label>
+                            <textarea id="product-images-input" rows="3" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></textarea>
+                        </div>
+
+                        <div class="space-y-2">
+                            <div class="flex items-center">
+                                <input id="product-active-toggle" type="checkbox" class="h-4 w-4 rounded">
+                                <label for="product-active-toggle" class="ml-2 block text-sm text-gray-900">Product is Active</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input id="product-hamper-toggle" type="checkbox" class="h-4 w-4 rounded">
+                                <label for="product-hamper-toggle" class="ml-2 block text-sm text-gray-900">This product is a hamper</label>
+                            </div>
+                        </div>
+                        
+                        <div id="hamper-contents-section" class="hidden pt-4 border-t">
+                            <h4 class="text-md font-semibold text-gray-800 mb-2">Hamper Contents</h4>
+                            <div class="flex items-center space-x-2 mb-4">
+                                <select id="hamper-product-select" class="flex-grow p-2 border border-gray-300 rounded-md"></select>
+                                <input id="hamper-quantity-input" type="number" value="1" min="1" class="w-20 p-2 border border-gray-300 rounded-md">
+                                <button type="button" id="add-hamper-item-btn" class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm">Add</button>
+                            </div>
+                            <div id="hamper-items-list" class="space-y-2">
+                            </div>
+                        </div>
+                       
+                        </div>
+                        
+                        <div id="product-form-spinner" class="hidden justify-center items-center py-4"><div class="spinner"></div></div>
+                        <p id="product-form-error" class="text-sm text-red-600 hidden"></p>
+
+                        <div class="items-center px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                            <button type="submit" id="product-save-btn" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:ml-3 sm:w-auto sm:text-sm">Save</button>
+                            <button type="button" id="product-modal-cancel-btn" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
+        <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+        <script src="firebase-config.js"></script> 
+        
+        <script type="module" src="admin.js?v=1000"></script>
+        
+
+        <div id="packing-slip-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 p-4">
+            <div id="packing-slip-content" class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-full overflow-y-auto">
+                <div class="p-8">
+                    <div class="flex justify-between items-start pb-4 border-b">
+                        <div>
+                            <h2 class="text-3xl font-bold text-gray-800">Packing Slip</h2>
+                            <p class="text-gray-500">Luxury Hampers</p>
+                        </div>
+                        <div class="text-right">
+                            <img src="assets/images/logo.png" alt="Company Logo" class="h-12 mb-2 ml-auto">
+                            <p class="text-sm"><strong>Order ID:</strong> #<span id="slip-order-id"></span></p>
+                            <p class="text-sm"><strong>Order Date:</strong> <span id="slip-order-date"></span></p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-8 my-6">
+                        <div>
+                            <p class="text-xs text-gray-500 uppercase font-semibold">Customer</p>
+                            <p class="text-lg font-medium text-gray-900" id="slip-customer-name"></p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs text-gray-500 uppercase font-semibold">Order Value</p>
+                            <p class="text-lg font-medium text-gray-900" id="slip-order-value"></p>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Item</th>
+                                    <th class="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">SKU / ID</th>
+                                    <th class="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Quantity</th>
+                                </tr>
+                            </thead>
+                            <tbody id="slip-items-table" class="bg-white divide-y divide-gray-200">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="mt-8 pt-4 border-t text-center text-gray-500 text-sm">
+                        <p>Thank you for your order!</p>
+                    </div>
+                </div>
+                <div id="packing-slip-actions" class="bg-gray-50 p-4 text-right space-x-3 rounded-b-lg">
+                    <button id="close-packing-slip-modal-btn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Close</button>
+                    <button id="print-packing-slip-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                        <i class="fas fa-print mr-2"></i>Print
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

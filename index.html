@@ -4,18 +4,54 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Luxury Hampers</title>
-    <link rel="stylesheet" href="/style.css">
-    <link rel="manifest" href="/manifest.json" crossorigin="use-credentials">
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
-    <meta name="theme-color" content="#2c3e50"/>
+    <meta name="theme-color" content="#ffffff"/>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Lora:wght@700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="icon" href="https://placehold.co/96x96/FFD700/000000?text=LH" type="image/png"> 
+    <link rel="icon" href="https://placehold.co/96x96/FFD700/000000?text=LH" type="image/png"> <link rel="stylesheet" href="style.css">
 </head>
 <body>
- 
+    <div id="ghost-header" class="ghost-header">
+    <div class="ghost-container">
+        
+        <div class="ghost-top-row">
+            <span id="ghost-title" class="ghost-title">All Hampers</span>
+            <div class="ghost-actions">
+                <button id="ghost-search-trigger" class="ghost-icon-btn">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                </button>
+                <button id="ghost-filter-trigger" class="ghost-pill-btn">
+                    <i class="fa-solid fa-sliders"></i>
+                    <span>Refine</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="vibe-scroller">
+    <div class="vibe-track" id="vibe-track">
+        <button class="vibe-chip" data-filter="BESTSELLER">
+            <i class="fa-solid fa-fire text-orange-500"></i> Trending
+        </button>
+        <button class="vibe-chip" data-filter="price-0-50">
+            <i class="fa-solid fa-tag text-blue-500"></i> Under £50
+        </button>
+        <button class="vibe-chip" data-filter="Vegan">
+            <i class="fa-solid fa-leaf text-green-500"></i> Vegan
+        </button>
+        <button class="vibe-chip" data-filter="Alcohol Free">
+            <i class="fa-solid fa-ban text-red-500"></i> Alcohol Free
+        </button>
+        <button class="vibe-chip" data-filter="Gluten Free">
+            <i class="fa-solid fa-wheat-awn-circle-exclamation text-yellow-600"></i> Gluten Free
+        </button>
+    </div>
+</div>
+    </div>
+</div>
 
     <!-- ... (The rest of your body content from header-contact-bar to the end of the quick-view-modal) ... -->
     <!-- The existing body content remains exactly the same. -->
@@ -56,9 +92,10 @@
             <nav id="mobile-nav-links" class="mobile-nav-links"></nav>
             <button id="mobile-nav-close" class="mobile-nav-close" aria-label="Close navigation menu">&times;</button>
         </div>
-
+        
         <main>
             <div id="page-list">
+                
                 <section class="hero">
                     <h1>Exquisite Hampers for Every Occasion</h1>
                     <p>Discover our curated collection of luxury food and wine hampers, crafted with passion and care.</p>
@@ -67,35 +104,55 @@
         
                 <section id="features-bar" class="features-bar"></section>
         
-                <section id="products-section" class="container">
-                    <div id="search-results-info" style="display: none;"></div>
-                    <div class="products-section-header">
-                        <h2 id="products-section-title" class="section-title">Bestsellers</h2>
-                        <button id="view-all-btn" class="btn btn-secondary" style="display: none;">View All</button>
+                <div id="shop-sidebar-overlay" class="sidebar-overlay"></div>
+
+                <aside id="shop-sidebar" class="shop-sidebar">
+                    
+                    <div class="sidebar-header">
+                        <h3 class="text-lg font-bold">Filters</h3>
+                        <button id="close-sidebar-btn" class="text-2xl">&times;</button>
                     </div>
-                    <div class="filter-sort-container">
-                        <div class="filter-group">
-                            <label for="filter-select">Filter by Price:</label>
-                            <select id="filter-select">
-                                <option value="all">All</option>
-                                <option value="price-0-50">Under £50</option>
-                                <option value="price-50-100">£50 - £100</option>
-                                <option value="price-100-9999">Over £100</option>
-                            </select>
-                        </div>
-                        <div class="filter-group">
-                            <label for="sort-select">Sort by:</label>
-                            <select id="sort-select">
-                                <option value="default">Default</option>
-                                <option value="price-asc">Price: Low to High</option>
-                                <option value="price-desc">Price: High to Low</option>
-                                <option value="name-asc">Name: A-Z</option>
-                                <option value="name-desc">Name: Z-A</option>
-                            </select>
-                        </div>
+
+                    <div class="filter-group" style="margin-bottom: 1.5rem;">
+                        <h4 style="font-weight: 600; margin-bottom: 0.5rem;">Price Range</h4>
+                        <select id="filter-select" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="all">All Prices</option>
+                            <option value="price-0-50">Under £50</option>
+                            <option value="price-50-100">£50 - £100</option>
+                            <option value="price-100-9999">Over £100</option>
+                        </select>
                     </div>
-                    <div id="product-grid"></div>
-                </section>
+
+                    <div class="filter-group" style="margin-bottom: 1.5rem;">
+                        <h4 style="font-weight: 600; margin-bottom: 0.5rem;">Sort By</h4>
+                        <select id="sort-select" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="default">Default</option>
+                            <option value="price-asc">Price: Low to High</option>
+                            <option value="price-desc">Price: High to Low</option>
+                            <option value="name-asc">Name: A-Z</option>
+                            <option value="name-desc">Name: Z-A</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group" style="margin-bottom: 1.5rem;">
+                        <h4 style="font-weight: 600; margin-bottom: 0.5rem;">Dietary Needs</h4>
+                        <div id="filter-container-dietary">
+                            <p class="text-sm text-gray-400">Loading...</p>
+                        </div> 
+                    </div>
+
+                    <div class="filter-group" style="margin-bottom: 1.5rem;">
+                        <h4 style="font-weight: 600; margin-bottom: 0.5rem;">Occasion</h4>
+                        <div id="filter-container-occasion"></div> 
+                    </div>
+
+                    <div class="filter-group" style="margin-bottom: 1.5rem;">
+                        <h4 style="font-weight: 600; margin-bottom: 0.5rem;">Contents</h4>
+                        <div id="filter-container-contents"></div> 
+                    </div>
+                    
+                    <button id="apply-filters-btn" class="btn btn-primary w-full md:hidden mt-4">Show Results</button>
+                </aside>
         
                <section id="occasions-section" class="container">
                     <h2 class="section-title">Shop by Occasion</h2>
@@ -231,17 +288,16 @@
     
     <!-- CHANGE: ADD FIREBASE SDK SCRIPTS -->
      <script src="https://cdn.jsdelivr.net/npm/algoliasearch@4/dist/algoliasearch.umd.min.js"></script>
-
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
-    <script type="module" src="firebase-config.js"></script> 
-<script type="module" src="auth.js"></script>
-<script type="module" src="wishlist.js"></script>
-<script type="module" src="app.js"></script>
+    <script src="firebase-config.js"></script> 
+    <script src="auth.js"></script>
+    <script src="wishlist.js"></script>
+    <script src="app.js?v=RED_DOT_TEST"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-analytics-compat.js"></script>
 
 </body>
 </html>
-
-
 
