@@ -816,12 +816,12 @@ function initCinematicScroll() {
     }
 
     // --- 2. GHOST CONTROLS ---
+    // Route through the same button/handler as the main filter trigger so opening
+    // and closing always go through the single toggleSidebar() function below —
+    // this used to duplicate the open logic here without wiring up a matching
+    // close/overflow-reset path, which could leave body.style.overflow stuck on 'hidden'.
     document.getElementById('ghost-filter-trigger')?.addEventListener('click', () => {
-        const sidebar = document.getElementById('shop-sidebar');
-        const overlay = document.getElementById('shop-sidebar-overlay');
-        if (sidebar) sidebar.classList.add('active');
-        if (overlay) overlay.classList.add('active');
-        document.body.style.overflow = 'hidden';
+        document.getElementById('mobile-filter-btn')?.click();
     });
 
     document.getElementById('ghost-search-trigger')?.addEventListener('click', () => {
