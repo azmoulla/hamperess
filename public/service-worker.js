@@ -1,7 +1,6 @@
 // FILE: public/service-worker.js
 
-// 1. IMPORTANT: Increment the version number one last time.
-const CACHE_NAME = 'luxury-hampers-cache-v33'; // Or any number higher than your current one
+const CACHE_NAME = 'luxury-hampers-cache-v34';
 
 const urlsToCache = [
     '/',
@@ -26,61 +25,48 @@ const urlsToCache = [
     '/assets/images/hero_main_banner.jpg',
     '/assets/images/occasion_birthday.jpg',
     '/assets/images/occasion_anniversary.jpg',
-    
 ];
 
-// --- LIFECYCLE FIX 1: IMMEDIATE ACTIVATION ---
-// The new service worker will activate as soon as it has finished installing.
+// Cache what we can on install, but don't let one bad URL fail the whole install.
 self.addEventListener('install', event => {
-    event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then(cache => {
-                console.log('Opened cache and caching static assets');
-                return cache.addAll(urlsToCache.map(url => new Request(url, {cache: 'reload'})));
-            })
-    );
-    self.skipWaiting(); // This forces the new service worker to become active immediately.
-});
-
-// FILE: public/service-worker.js
-
-
-self.addEventListener('install', event => {
-    // Force the new service worker to become active immediately
     self.skipWaiting();
-});
-
-self.addEventListener('activate', event => {
     event.waitUntil(
-        caches.keys().then(keys => Promise.all(
-            keys.map(key => caches.delete(key)) // DELETE EVERYTHING
-        )).then(() => self.clients.claim())
+        caches.open(CACHE_NAME).then(cache => {
+            return Promise.allSettled(
+                urlsToCache.map(url => cache.add(new Request(url, { cache: 'reload' })))
+            );
+        })
     );
 });
 
-self.addEventListener('fetch', event => {
-    // DEV MODE: Always go to network first
-    if (event.request.method === 'GET') {
-        event.respondWith(
-            fetch(event.request).catch(() => caches.match(event.request))
-        );
-    }
+// Clean up old caches and take control immediately.
+self.addEventListener('activate', event => {
+    event.waitUntil(
+        caches.keys()
+            .then(cacheNames => Promise.all(
+                cacheNames
+                    .filter(name => name !== CACHE_NAME)
+                    .map(name => caches.delete(name))
+            ))
+            .then(() => self.clients.claim())
+    );
 });
 
-// --- LIFECYCLE FIX 2: TAKE CONTROL ---
-// The new service worker takes control of the page and cleans up old caches.
-self.addEventListener('activate', event => {
-    const cacheWhitelist = [CACHE_NAME];
-    event.waitUntil(
-        caches.keys().then(cacheNames => {
-            return Promise.all(
-                cacheNames.map(cacheName => {
-                    if (cacheWhitelist.indexOf(cacheName) === -1) {
-                        console.log('Deleting old cache:', cacheName);
-                        return caches.delete(cacheName);
-                    }
-                })
-            );
-        }).then(() => self.clients.claim()) // This makes the new worker control all open tabs.
+// Network-first, cache as fallback. Critically: never resolve with undefined,
+// which is what was causing "Failed to convert value to 'Response'" errors.
+self.addEventListener('fetch', event => {
+    if (event.request.method !== 'GET') return;
+
+    event.respondWith(
+        fetch(event.request)
+            .then(response => {
+                const responseClone = response.clone();
+                caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
+                return response;
+            })
+            .catch(async () => {
+                const cachedResponse = await caches.match(event.request);
+                return cachedResponse || Response.error();
+            })
     );
 });
