@@ -4,5 +4,4 @@ firebase-service-account.json
 .env
 .env.local
 .vercel
-public/firebase-config.js
 .env*.local
