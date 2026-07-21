@@ -5,7 +5,6 @@ html, body {
     min-height: 100%;
     overflow-x: hidden; /* Prevents side-to-side scrolling */
     -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
-    overscroll-behavior-y: none; /* Prevents "pull to refresh" if you want a cleaner app feel */
 }
 *, ::before, ::after {
   --tw-border-spacing-x: 0;
