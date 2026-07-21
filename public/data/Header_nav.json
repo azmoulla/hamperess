@@ -1,0 +1,61 @@
+[
+  {
+    "title": "Bestsellers",
+    "linkType": "route",
+    "target": "/product-listing",
+    "argument": "Bestsellers",
+    "isSale": false
+  },
+  {
+    "title": "Occasions",
+    "isMegaMenu": true,
+    "subMenu": [
+      { "title": "Birthday Hampers", "argument": "Birthday Hampers" },
+      { "title": "Anniversary Hampers", "argument": "Anniversary Hampers" },
+      { "title": "Thank You Gifts", "argument": "Thank You Gifts" },
+      { "title": "New Baby Gifts", "argument": "New Baby Gifts" },
+      { "title": "Congratulations", "argument": "Congratulations Hampers" }
+    ]
+  },
+  {
+    "title": "Recipient",
+    "isMegaMenu": true,
+    "subMenu": [
+      { "title": "For Her", "argument": "For Her" },
+      { "title": "For Him", "argument": "For Him" },
+      { "title": "For Couples", "argument": "For Couples" },
+      { "title": "For Families", "argument": "For Families" }
+    ]
+  },
+  {
+    "title": "Food & Drink",
+    "isMegaMenu": true,
+    "subMenu": [
+        { "title": "All Hampers", "argument": "__ALL_PRODUCTS_TRIGGER__" },
+        { "title": "Food Only", "argument": "Food Only Selection" },
+        { "title": "Wine & Spirits", "argument": "Premium Wine & Spirits" },
+        { "title": "My Day Hampers", "argument": "My Day Hampers" }
+    ]
+  },
+  {
+    "title": "Create Your Own",
+    "linkType": "route",
+    "target": "/create-your-own",
+    "argument": null,
+    "isSale": false
+  },
+  {
+    "title": "Corporate",
+    "linkType": "route",
+    "target": "/product-listing",
+    "argument": "Corporate Gifting Solutions",
+    "isSale": false
+  },
+  {
+    "title": "SALE",
+    "linkType": "route",
+    "target": "/product-listing",
+    "argument": "Special Sale Items",
+    "isSale": true
+  }
+]
