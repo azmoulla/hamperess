@@ -2121,7 +2121,7 @@ body.product-list-active .search-container {
   flex-direction: column;
   text-decoration: none;
   color: #0F1111;
-  overflow: hidden;
+  overflow: clip;
   padding: 12px;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
@@ -2134,7 +2134,7 @@ body.product-list-active .search-container {
 .product-image-container {
   position: relative;
   aspect-ratio: 1 / 1;
-  overflow: hidden;
+  overflow: clip;
   max-height: 250px;
 }
 
@@ -5949,7 +5949,7 @@ body.product-list-active .search-container {
     display: flex !important;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
+    overflow: clip;
 }
 
 /* FIX: Completely hide the broken image icon and text */
@@ -6039,7 +6039,7 @@ body.product-list-active .search-container {
     display: flex !important;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
+    overflow: clip;
 }
 /* 1. Hide the grey placeholder image inside luxury cards */
 .product-image-container.luxury-card img.product-image {
