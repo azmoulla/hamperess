@@ -359,6 +359,40 @@
                         </div>
                         <h3 class="font-semibold mb-4">Voucher History</h3>
                         <div id="vouchers-table-container"></div>
+
+                        <hr class="my-8">
+
+                        <div class="mb-8 p-4 border rounded-md bg-gray-50">
+                            <h3 class="font-semibold mb-2">Create a Discount Code</h3>
+                            <p class="text-sm text-gray-500 mb-4">Generic promo codes (percent/fixed/free shipping), separate from customer store credits above. All constraints below are optional.</p>
+                            <form id="create-discount-form" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div><label for="discount-code" class="block text-sm font-medium">Code</label><input type="text" id="discount-code" required placeholder="e.g. SUMMER10" class="w-full mt-1 px-3 py-2 border rounded-md uppercase"></div>
+                                <div><label for="discount-type" class="block text-sm font-medium">Type</label>
+                                    <select id="discount-type" required class="w-full mt-1 px-3 py-2 border rounded-md">
+                                        <option value="percent">Percent off</option>
+                                        <option value="fixed">Fixed amount off</option>
+                                        <option value="shipping">Free shipping</option>
+                                    </select>
+                                </div>
+                                <div><label for="discount-value" class="block text-sm font-medium">Value (% or £)</label><input type="number" id="discount-value" step="0.01" required class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                <div><label for="discount-max-uses" class="block text-sm font-medium">Max Uses <span class="text-gray-400">(blank = unlimited)</span></label><input type="number" id="discount-max-uses" min="1" step="1" class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+
+                                <div><label for="discount-start-date" class="block text-sm font-medium">Start Date <span class="text-gray-400">(optional)</span></label><input type="date" id="discount-start-date" class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                <div><label for="discount-end-date" class="block text-sm font-medium">End Date <span class="text-gray-400">(optional)</span></label><input type="date" id="discount-end-date" class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                <div><label for="discount-min-order" class="block text-sm font-medium">Min Order Value (£) <span class="text-gray-400">(optional)</span></label><input type="number" id="discount-min-order" step="0.01" min="0" class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                <div class="flex items-end pb-2"><label class="flex items-center text-sm font-medium"><input type="checkbox" id="discount-one-per-customer" class="mr-2">One use per customer</label></div>
+
+                                <div class="md:col-span-2"><label for="discount-product-ids" class="block text-sm font-medium">Restrict to Product IDs <span class="text-gray-400">(comma-separated, optional)</span></label><input type="text" id="discount-product-ids" placeholder="e.g. GIFT-CARD, HAMPER-042" class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                <div class="md:col-span-2"><label for="discount-categories" class="block text-sm font-medium">Restrict to Categories <span class="text-gray-400">(comma-separated, optional)</span></label><input type="text" id="discount-categories" placeholder="e.g. Wine, Chocolate" class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+
+                                <div class="md:col-span-4 flex items-center gap-3">
+                                    <button type="submit" id="discount-form-submit-btn" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 h-11">Create Discount Code</button>
+                                    <button type="button" id="discount-form-cancel-btn" class="hidden text-gray-600 hover:text-gray-900 text-sm font-medium">Cancel Edit</button>
+                                </div>
+                            </form>
+                        </div>
+                        <h3 class="font-semibold mb-4">Discount Codes</h3>
+                        <div id="discounts-table-container"></div>
                     </div>
 
                     <div id="page-products" class="admin-page hidden bg-white p-8 rounded-lg shadow-md">
@@ -861,13 +895,19 @@
                 </div>
             </div>
         </div>
+        </div><!-- closes #product-modal (was never actually closed -- the div
+             count for this file was off by exactly one, and everything after
+             it, including #packing-slip-modal, was silently being nested
+             inside #product-modal and inheriting its display:none whenever
+             the product editor wasn't open, which is why packing slips never
+             appeared even though their content loaded correctly) -->
         <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
         <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
         <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
         <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
         <script src="firebase-config.js"></script> 
         
-        <script type="module" src="admin.js?v=1000"></script>
+        <script type="module" src="admin.js?v=1007"></script>
         
 
         <div id="packing-slip-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 p-4">

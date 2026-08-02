@@ -146,8 +146,21 @@ const CLICK_HANDLERS = [
         handler: (target, e) => {
             if (target.dataset.argument === undefined) return false;
             e.preventDefault();
-            handleMenuClick({ argument: target.dataset.argument, target: target.dataset.target, title: target.textContent });
             closeMobileMenu();
+            // FIXED (2026-08-01): this used to call handleMenuClick() directly,
+            // which never touches window.location.hash. That left the URL
+            // frozen on whatever route you'd been on before -- e.g. clicking
+            // "Bestsellers" while viewing /checkout left the address bar
+            // stuck on "#/checkout". The next click on "Go to Checkout" then
+            // called router.navigate('/checkout'), which no-ops because, as
+            // far as it's concerned, the hash never changed -- making the
+            // button appear completely unresponsive. Routing through
+            // router.navigate() here keeps the hash in sync with what's
+            // actually on screen, so subsequent navigation works correctly.
+            const path = target.dataset.target === '/create-your-own'
+                ? '/create-your-own'
+                : `/category/${encodeURIComponent(target.dataset.argument)}`;
+            router.navigate(path);
             return true;
         }
     },
@@ -166,17 +179,23 @@ const CLICK_HANDLERS = [
         }
     },
     { selector: '.remove-discount-btn', handler: removeDiscount },
-    { selector: '#header-title', handler: showAllProducts },
+    // FIXED (2026-08-01): route through router.navigate('/') instead of
+    // calling showAllProducts() directly, for the same hash-sync reason as
+    // the nav-links handler above.
+    { selector: '#header-title', handler: () => router.navigate('/') },
     { selector: '#hero-shop-now-btn', handler: () => document.getElementById('products-section').scrollIntoView({ behavior: 'smooth' }) },
     { selector: '#secondary-hero-btn', handler: () => { selectedCustomItems = []; fetchCustomHamperItems(); } },
     {
         selector: '.occasion-card',
         handler: (target) => {
-            currentCategoryFilter = target.dataset.navigationArgument;
-            currentTagFilter = null;
-            document.getElementById('search-input').value = '';
-            showPage('list');
-            updateProductView();
+            // FIXED (2026-08-01): route through router.navigate() (same
+            // hash-sync fix as the nav-links handler above) instead of
+            // setting filters and calling showPage/updateProductView
+            // directly. handleMenuClick()'s equivalent branch does the same
+            // filter reset plus a couple of extras (active-state nav
+            // highlighting, resetting the sort/price dropdowns too), so
+            // behavior here is a superset of the old logic, not a regression.
+            router.navigate(`/category/${encodeURIComponent(target.dataset.navigationArgument)}`);
         }
     },
 
@@ -417,7 +436,7 @@ let dynamicSearchTags = { dietary: [], occasion: [], contents: [] };
 let addressFormReturnPath = null; // Add this line
 let allDiscounts = [];
 let appliedDiscount = null;
-let checkoutStep = 1; // 1: Details, 2: Payment, 3: Review
+let checkoutStep = 1; // 1: Details, 2: Payment & Review (merged 2026-07-22 -- PayPal only, Card retired)
 let guestDetails = {}; // To store guest info between steps
 let editingCartItemId = null; // Tracks the ID of the hamper being edited
 let ribbonTimeout = null;     // Manages the timer for the confirmation ribbon
@@ -816,12 +835,13 @@ function initCinematicScroll() {
     }
 
     // --- 2. GHOST CONTROLS ---
+    // Route through the single toggleSidebar() function (exposed on window by
+    // setupEventListeners) so opening always goes through the same canonical
+    // open/close path — this used to try to proxy a click through to
+    // #mobile-filter-btn, an element that doesn't actually exist anywhere in
+    // the DOM, so Refine silently did nothing.
     document.getElementById('ghost-filter-trigger')?.addEventListener('click', () => {
-        const sidebar = document.getElementById('shop-sidebar');
-        const overlay = document.getElementById('shop-sidebar-overlay');
-        if (sidebar) sidebar.classList.add('active');
-        if (overlay) overlay.classList.add('active');
-        document.body.style.overflow = 'hidden';
+        window.toggleSidebar?.(true);
     });
 
     document.getElementById('ghost-search-trigger')?.addEventListener('click', () => {
@@ -1082,6 +1102,11 @@ if (mobileFilterBtn) mobileFilterBtn.addEventListener('click', () => toggleSideb
 if (closeSidebarBtn) closeSidebarBtn.addEventListener('click', () => toggleSidebar(false));
 if (overlay) overlay.addEventListener('click', () => toggleSidebar(false));
 if (applyFiltersBtn) applyFiltersBtn.addEventListener('click', () => toggleSidebar(false));
+
+// Expose so other handlers (e.g. the ghost-header's Refine button, which has
+// no matching #mobile-filter-btn element to proxy a click through to) can
+// open/close the same sidebar via this one canonical function.
+window.toggleSidebar = toggleSidebar;
     // 1. Standard Listeners
     window.addEventListener('resize', renderFooterLayout);
     document.body.addEventListener('click', handleGlobalClick);
@@ -1468,7 +1493,16 @@ async function fetchWithAuth(url, options = {}) {
     } finally {
         // Clear the input field and update totals regardless of the outcome
         if (inputEl) inputEl.value = '';
-        updateCartTotals();
+        // NEW (2026-07-22): if we're on checkout step 2, a discount that
+        // changes whether the order has a balance due needs to swap between
+        // the PayPal buttons and the "Place Order" button -- a plain totals
+        // refresh doesn't re-render that. Full re-render handles it (and
+        // calls updateCartTotals() itself).
+        if (checkoutStep === 2 && (document.getElementById('paypal-button-container') || document.getElementById('place-order-btn'))) {
+            displayCheckoutPage();
+        } else {
+            updateCartTotals();
+        }
     }
 }
 
@@ -2141,47 +2175,10 @@ function getDeliveryEstimate() {
 
     return `FREE delivery ${startStr} - ${endStr}`;
 }
-function renderRelatedProducts(currentProduct) {
-    if (!currentProduct) return;
-
-    // Filter products to find related ones
-    const relatedProducts = allProducts.filter(product => 
-        product.category === currentProduct.category && product.id !== currentProduct.id
-    ).slice(0, 10); // Take up to 10 related products
-
-    // If there are no related products, do nothing
-    if (relatedProducts.length === 0) {
-        return;
-    }
-
-    // Create the HTML for the section
-    const section = document.createElement('section');
-    section.id = 'related-products-section';
-    section.className = 'related-products-section';
-
-    section.innerHTML = `
-        <div class="container">
-            <h2 class="section-title">You Might Also Like</h2>
-            <div class="related-products-carousel-wrapper">
-                <button class="related-products-arrow prev" data-direction="-1" aria-label="Scroll left"><i class="fa-solid fa-chevron-left"></i></button>
-                <div class="related-products-list-container">
-                    <div id="related-products-grid" class="related-products-grid">
-                        </div>
-                </div>
-                <button class="related-products-arrow next" data-direction="1" aria-label="Scroll right"><i class="fa-solid fa-chevron-right"></i></button>
-            </div>
-        </div>
-    `;
-
-    // Append the new section to the product detail page
-    pageDetail.appendChild(section);
-
-    // Use the existing displayProducts function to render the cards
-    const relatedGrid = document.getElementById('related-products-grid');
-    displayProducts(relatedProducts, relatedGrid);
-}
-
-
+// NOTE: renderRelatedProducts is defined below (near "RELATED PRODUCTS LOGIC"),
+// which targets #related-products-placeholder in the actual showProductDetail template.
+// (An earlier duplicate definition that built its own section/carousel was dead code
+// silently overwritten by the later declaration, and was removed here.)
 
 function setupImageZoom(container) {
     // Exit on small screens
@@ -2353,45 +2350,45 @@ async function showProductDetail(slug) {
                 ${imageUrls.length > 1 ? `
                     <button class="gallery-arrow gallery-prev" id="gallery-prev"><i class="fa-solid fa-chevron-left"></i></button>
                     <button class="gallery-arrow gallery-next" id="gallery-next"><i class="fa-solid fa-chevron-right"></i></button>
-                    <div class="gallery-dots" id="gallery-dots">
-                        ${imageUrls.map((_, i) => `<div class="gallery-dot ${i === 0 ? 'active' : ''}" data-index="${i}"></div>`).join('')}
-                    </div>` : ''}
+                    <div class="gallery-counter" id="gallery-counter">1 / ${imageUrls.length}</div>` : ''}
             </div>
 
             <div class="detail-info text-center md:text-left">
                 <p class="category-label text-gray-500 mb-2 uppercase tracking-wider font-bold text-sm">${product.category}</p>
-                <h1 class="title text-4xl lg:text-5xl font-bold mb-4 font-headings">${product.title}</h1>
+                <h1 class="title text-4xl lg:text-5xl font-light mb-4 font-body tracking-tight">${product.title}</h1>
                 
                 ${priceDisplayHtml}
 
                 <div id="variants-container" class="mb-8 mt-6">${variantsHtml}</div>
 
-                <div class="detail-actions mt-8 flex gap-4 items-end justify-center md:justify-start">
-                    <div class="quantity-wrapper">
-                        <label class="variant-label mb-1 block text-left">Quantity</label>
-                        <div class="quantity-control">
-                            <button type="button" class="qty-btn" id="qty-minus"><i class="fa-solid fa-minus"></i></button>
-                            <input type="number" id="detail-quantity-input" value="1" min="1" class="quantity-input" readonly>
-                            <button type="button" class="qty-btn" id="qty-plus"><i class="fa-solid fa-plus"></i></button>
+                <div class="detail-actions mt-8">
+                    <div class="detail-actions-row flex gap-4 items-end justify-center md:justify-start">
+                        <div class="quantity-wrapper">
+                            <label class="variant-label mb-1 block text-left">Quantity</label>
+                            <div class="quantity-control">
+                                <button type="button" class="qty-btn" id="qty-minus"><i class="fa-solid fa-minus"></i></button>
+                                <input type="number" id="detail-quantity-input" value="1" min="1" class="quantity-input" readonly>
+                                <button type="button" class="qty-btn" id="qty-plus"><i class="fa-solid fa-plus"></i></button>
+                            </div>
                         </div>
+                        <button id="detail-wishlist-btn" class="btn btn-outline w-[50px] h-[50px] flex items-center justify-center rounded-full border-2 shrink-0" data-product-id="${product.id}">
+                            <i class="fa-regular fa-heart text-xl"></i>
+                        </button>
                     </div>
-                    <button id="detail-add-btn" class="btn btn-primary flex-grow max-w-[400px] py-4 text-lg h-[50px] rounded-full uppercase tracking-widest font-bold shadow-lg">
+                    <button id="detail-add-btn" class="btn btn-primary w-full mt-4 py-4 text-lg rounded-full uppercase tracking-widest font-bold shadow-lg">
                         Add to Basket - £${currentPriceBase.toFixed(2)}
-                    </button>
-                    <button id="detail-wishlist-btn" class="btn btn-outline w-[50px] h-[50px] flex items-center justify-center rounded-full border-2" data-product-id="${product.id}">
-                        <i class="fa-regular fa-heart text-xl"></i>
                     </button>
                 </div>
 
                 <div class="description mt-12 text-gray-700 leading-loose text-lg max-w-2xl mx-auto md:mx-0 font-body">
                     ${safeDescription}
                 </div>
-
-                <div id="cross-sell-container" class="cross-sell-section hidden mt-16 pt-8 border-t border-gray-200">
-                    <h3 class="text-2xl font-bold mb-6 font-headings">Complete the Experience</h3>
-                    <div id="cross-sell-grid" class="cross-sell-grid"></div>
-                </div>
             </div>
+        </div>
+
+        <div id="cross-sell-container" class="cross-sell-section hidden container mx-auto px-4 mt-16 pt-8 border-t border-gray-200">
+            <h3 class="text-2xl font-bold mb-6 font-headings">Complete the Experience</h3>
+            <div id="cross-sell-grid" class="cross-sell-grid"></div>
         </div>
 
         <div id="related-products-placeholder"></div>
@@ -2400,6 +2397,7 @@ async function showProductDetail(slug) {
              <div class="container mx-auto px-4">
                 <h3 class="section-title text-center mb-8 font-headings text-3xl">Customer Reflections</h3>
                 <div id="review-wall-grid" class="review-masonry"></div>
+                <div id="review-wall-more" class="text-center mt-8"></div>
             </div>
         </div>
     `;
@@ -2428,58 +2426,15 @@ async function showProductDetail(slug) {
 // ==========================================
 
 // 1. CAROUSEL LOGIC
-function initGalleryScroll(count) {
-    const track = document.getElementById('detail-gallery-track');
-    if (!track || count <= 1) return;
-
-    const prevBtn = document.getElementById('gallery-prev');
-    const nextBtn = document.getElementById('gallery-next');
-    const dots = document.querySelectorAll('.gallery-dot');
-
-    const getSlideWidth = () => track.querySelector('.gallery-slide').offsetWidth;
-
-    if(prevBtn) {
-        prevBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            track.scrollBy({ left: -getSlideWidth(), behavior: 'smooth' });
-        });
-    }
-
-    if(nextBtn) {
-        nextBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            track.scrollBy({ left: getSlideWidth(), behavior: 'smooth' });
-        });
-    }
-
-    dots.forEach((dot, idx) => {
-        dot.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const target = track.children[idx];
-            if (target) {
-                // Determine alignment: last slide snaps to end, others start
-                const align = (idx === count - 1) ? 'end' : 'start';
-                target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: align });
-            }
-        });
-    });
-
-    track.addEventListener('scroll', () => {
-        const center = track.scrollLeft + (track.clientWidth / 2);
-        const slides = Array.from(track.children);
-        let closest = 0;
-        let minDist = Infinity;
-
-        slides.forEach((slide, idx) => {
-            const slideCenter = slide.offsetLeft + (slide.offsetWidth / 2);
-            const dist = Math.abs(center - slideCenter);
-            if(dist < minDist) { minDist = dist; closest = idx; }
-        });
-
-        dots.forEach(d => d.classList.remove('active'));
-        if(dots[closest]) dots[closest].classList.add('active');
-    }, { passive: true });
-}
+// NOTE: The real implementation lives further down this file (see the other
+// "initGalleryScroll" definition near initDiscoveryEngine). Because both were
+// plain `function` declarations, the later one silently overwrote this one at
+// load time — this copy never actually ran. Removed to avoid confusion; see
+// the other definition for the live carousel click/scroll wiring, which now
+// uses scrollIntoView() for the arrow buttons (matching the dots) instead of
+// a raw scrollBy() pixel offset, since the latter was fighting with this
+// gallery's `scroll-snap-type: x mandatory` and getting stuck partway through
+// the transition instead of landing on the next image.
 
 // 2. ZOOM LOGIC (FIXED)
 /* --- HELPER: ZOOM FUNCTION (Final Production Version) --- */
@@ -2765,13 +2720,35 @@ async function loadReviewsForWall(productId) {
 }
 
 function renderReviewsToGrid(reviews, container) {
-    container.innerHTML = reviews.map(r => `
+    const PAGE_SIZE = 5;
+    const moreContainer = document.getElementById('review-wall-more');
+    let shown = Math.min(PAGE_SIZE, reviews.length);
+
+    const cardHtml = (r) => `
         <div class="review-card-modern">
-            <div class="text-yellow-400 text-sm mb-2">${'★'.repeat(r.rating)}</div>
+            <div class="text-yellow-400 text-sm mb-2">${'★'.repeat(r.rating)}${'☆'.repeat(Math.max(0, 5 - r.rating))}</div>
             <p class="italic text-gray-600 mb-4">"${r.quote || r.comment}"</p>
             <p class="font-bold text-sm text-gray-800">— ${r.author || r.userName}</p>
         </div>
-    `).join('');
+    `;
+
+    function draw() {
+        container.innerHTML = reviews.slice(0, shown).map(cardHtml).join('');
+
+        if (!moreContainer) return;
+        const remaining = reviews.length - shown;
+        if (remaining > 0) {
+            moreContainer.innerHTML = `<button id="load-more-reviews-btn" class="btn btn-outline">See More Reviews (${remaining} more)</button>`;
+            document.getElementById('load-more-reviews-btn').addEventListener('click', () => {
+                shown = Math.min(shown + PAGE_SIZE, reviews.length);
+                draw();
+            });
+        } else {
+            moreContainer.innerHTML = '';
+        }
+    }
+
+    draw();
 }
 
 
@@ -3125,7 +3102,7 @@ async function fetchAndDisplayStaticPage(pageName) {
              endpoint = '/api/content-manager?page=contact_us';
             break;
             case 'faqs': 
-            endpoint = 'content-manager.js';
+            endpoint = '/api/content-manager?page=faqs';
             break;
             case 'delivery_info': 
             endpoint = '/api/content-manager?page=delivery_info';
@@ -3149,8 +3126,8 @@ async function fetchAndDisplayStaticPage(pageName) {
     // Render based on fetched content
     if (pageContent) {
         // Route to the correct rendering function based on the page name and expected structure
-        if (pageName === 'faqs' && Array.isArray(pageContent)) {
-            renderFaqPage(pageContent);
+        if (pageName === 'faqs' && (Array.isArray(pageContent) || (pageContent && Array.isArray(pageContent.faqs)))) {
+            renderFaqPage(pageContent.faqs || pageContent);
         } else if (pageName === 'delivery_info' && Array.isArray(pageContent)) {
             renderDeliveryInfoPage(pageContent);
         } else if (pageName === 'contact_us' && pageContent.pageTitle) { // Specific check for Contact Us structure
@@ -4245,40 +4222,29 @@ function displayCheckoutPage() {
             actionButtonHtml = `<button id="checkout-step1-btn" class="btn btn-primary btn-full-width mt-6">Continue</button>`;
             break;
         case 2:
-            const paymentMethods = { Card: [], PayPal: [] };
-            if (window.footerContent?.weAccept?.imageUrls) {
-                window.footerContent.weAccept.imageUrls.forEach(url => {
-                    if (url.toLowerCase().includes('paypal')) paymentMethods.PayPal.push(`<img src="${url}" alt="PayPal">`);
-                    else paymentMethods.Card.push(`<img src="${url}" alt="Card">`);
-                });
-            }
-            stepContentHtml = `
-                <h3>2. Payment Details</h3>
-                <p>This is a demo payment form.</p>
-                <input type="hidden" id="selected-payment-method" value="${guestDetails.paymentMethod || 'Card'}">
-                <div class="form-group"><label>Payment Method</label><div class="payment-method-selector">
-                    <button type="button" class="payment-method-btn ${ (guestDetails.paymentMethod || 'Card') === 'Card' ? 'active' : '' }" data-method="Card">${paymentMethods.Card.join('') || 'Card'}</button>
-                    <button type="button" class="payment-method-btn ${ guestDetails.paymentMethod === 'PayPal' ? 'active' : '' }" data-method="PayPal">${paymentMethods.PayPal.join('') || 'PayPal'}</button>
-                </div></div>
-                <form id="card-details-form" class="space-y-4" novalidate style="display: ${ (guestDetails.paymentMethod || 'Card') === 'Card' ? 'block' : 'none' };">
-                    ${createFormGroup('Name on Card', 'card-name', 'text', { value: guestDetails.cardName || '', placeholder: 'John M. Doe' })}
-                    ${createFormGroup('Card Number', 'card-number', 'text', { value: guestDetails.cardNumber || '', placeholder: '4242 4242 4242 4242', maxlength: '19', inputmode: 'numeric' })}
-                    <div class="form-group-row">
-                        ${createFormGroup('Expiry', 'card-expiry', 'text', { value: guestDetails.cardExpiry || '', placeholder: 'MM / YY', maxlength: '7', inputmode: 'numeric' })}
-                        ${createFormGroup('CVC', 'card-cvc', 'text', { value: guestDetails.cardCvc || '', placeholder: '123', maxlength: '4', inputmode: 'numeric' })}
-                    </div>
-                </form>
-                <div id="paypal-message" class="hidden mt-4 text-center text-gray-600" style="display: ${ guestDetails.paymentMethod === 'PayPal' ? 'block' : 'none' };"><p>After clicking 'Continue', you will be redirected to PayPal to complete your purchase securely.</p></div>`;
-            actionButtonHtml = `<button id="checkout-step2-btn" class="btn btn-primary btn-full-width mt-6">Continue to Review</button><a href="#" id="checkout-back-btn" class="back-link">Go Back</a>`;
-            break;
-        case 3:
+            // NEW (2026-07-22): Payment and Review merged into a single step.
+            // PayPal is the only payment method now -- it covers both wallet
+            // and card payment via its own built-in "Debit or Credit Card"
+            // funding option, so the old separate (never-functional) Card
+            // form/tab was retired rather than kept alongside it. When the
+            // order total is fully covered by a discount, there's nothing to
+            // pay, so we skip PayPal entirely and just show Place Order.
             const { totalAmount: reviewTotal } = calculateTotals();
-            const selectedPaymentMethod = reviewTotal <= 0 ? "N/A (Covered by Discount)" : (guestDetails.paymentMethod || 'Card');
             let finalAddress;
             if (isLoggedIn && selectedCheckoutAddressId) { finalAddress = userAddresses.find(a => a.id === selectedCheckoutAddressId); }
             if (!finalAddress) { finalAddress = { fullName: guestDetails.name, addressLine1: guestDetails.addressLine1, city: guestDetails.city, postcode: guestDetails.postcode }; }
-            stepContentHtml = `<h3>3. Review Order</h3><div class="review-section"><h4>Shipping to:</h4><p>${finalAddress.fullName}<br>${finalAddress.addressLine1}<br>${finalAddress.city}, ${finalAddress.postcode}</p></div><div class="review-section"><h4>Payment Method:</h4><p>${selectedPaymentMethod}</p></div>`;
-            actionButtonHtml = `<button id="place-order-btn" class="btn btn-primary btn-full-width mt-6"><span class="btn-text">Place Order</span><div class="spinner" style="display: none;"></div></button><a href="#" id="checkout-back-btn" class="back-link">Go Back</a>`;
+
+            stepContentHtml = `<h3>2. Payment &amp; Review</h3><div class="review-section"><h4>Shipping to:</h4><p>${finalAddress.fullName}<br>${finalAddress.addressLine1}<br>${finalAddress.city}, ${finalAddress.postcode}</p></div>`;
+
+            if (reviewTotal > 0) {
+                guestDetails.paymentMethod = 'PayPal';
+                stepContentHtml += `<div class="review-section"><h4>Payment:</h4><p class="small-text mb-2">Pay securely with PayPal, or by card via PayPal's guest checkout.</p><div id="paypal-button-container" class="mt-2"></div></div>`;
+                actionButtonHtml = `<a href="#" id="checkout-back-btn" class="back-link">Go Back</a>`;
+            } else {
+                guestDetails.paymentMethod = 'N/A (Covered by Discount)';
+                stepContentHtml += `<div class="review-section"><h4>Payment Method:</h4><p>N/A (Covered by Discount)</p></div>`;
+                actionButtonHtml = `<button id="place-order-btn" class="btn btn-primary btn-full-width mt-6"><span class="btn-text">Place Order</span><div class="spinner" style="display: none;"></div></button><a href="#" id="checkout-back-btn" class="back-link">Go Back</a>`;
+            }
             break;
     }
 
@@ -4286,8 +4252,7 @@ function displayCheckoutPage() {
         <div class="page-header"><h2>Checkout</h2></div>
         <div class="checkout-progress-bar">
             <div class="step ${checkoutStep >= 1 ? 'active' : ''}">1. Details</div>
-            <div class="step ${checkoutStep >= 2 ? 'active' : ''}">2. Payment</div>
-            <div class="step ${checkoutStep >= 3 ? 'active' : ''}">3. Review</div>
+            <div class="step ${checkoutStep >= 2 ? 'active' : ''}">2. Payment &amp; Review</div>
         </div>
         <div class="checkout-grid">
             <div class="checkout-form">${stepContentHtml}${actionButtonHtml}</div>
@@ -4315,14 +4280,7 @@ function displayCheckoutPage() {
     
     showPage('checkout');
     updateCartTotals();
-
-    const storePaymentDetails = () => {
-        guestDetails.paymentMethod = document.getElementById('selected-payment-method')?.value || guestDetails.paymentMethod;
-        guestDetails.cardName = document.getElementById('card-name')?.value || guestDetails.cardName;
-        guestDetails.cardNumber = document.getElementById('card-number')?.value || guestDetails.cardNumber;
-        guestDetails.cardExpiry = document.getElementById('card-expiry')?.value || guestDetails.cardExpiry;
-        guestDetails.cardCvc = document.getElementById('card-cvc')?.value || guestDetails.cardCvc;
-    };
+    renderPayPalButtonsIfPresent();
 
     document.getElementById('checkout-step1-btn')?.addEventListener('click', () => {
         let isFormValid = true;
@@ -4338,33 +4296,7 @@ function displayCheckoutPage() {
         }
         if (isFormValid) {
             storeGuestDetails();
-            const { totalAmount } = calculateTotals();
-            if (totalAmount <= 0) {
-                guestDetails.paymentMethod = "N/A (Covered by Discount)";
-                checkoutStep = 3;
-            } else {
-                checkoutStep = 2;
-            }
-            displayCheckoutPage();
-        } else if (firstInvalidField) {
-            firstInvalidField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-    });
-    
-    document.getElementById('checkout-step2-btn')?.addEventListener('click', () => {
-        let isFormValid = true;
-        let firstInvalidField = null;
-        if (document.getElementById('selected-payment-method').value === 'Card') {
-            document.getElementById('card-details-form').querySelectorAll('input[required]').forEach(input => {
-                if (!validateField(input)) {
-                    isFormValid = false;
-                    if (!firstInvalidField) firstInvalidField = input;
-                }
-            });
-        }
-        if (isFormValid) {
-            storePaymentDetails();
-            checkoutStep = 3;
+            checkoutStep = 2;
             displayCheckoutPage();
         } else if (firstInvalidField) {
             firstInvalidField.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -4374,23 +4306,14 @@ function displayCheckoutPage() {
     document.getElementById('checkout-back-btn')?.addEventListener('click', (e) => {
         e.preventDefault();
         if (checkoutStep > 1) {
-            if (checkoutStep === 2) storePaymentDetails();
             checkoutStep--;
             displayCheckoutPage();
         }
     });
-    
+
     document.getElementById('address-search-input')?.addEventListener('input', handleAddressSearch);
     document.getElementById('address-results-container')?.addEventListener('click', (e) => { if (e.target.classList.contains('address-suggestion')) selectAddressSuggestion(e.target.dataset.id); });
     document.getElementById('add-new-address-checkout')?.addEventListener('click', (e) => { e.preventDefault(); addressFormReturnPath = 'checkout'; renderAddressForm(); });
-    document.querySelectorAll('.payment-method-btn').forEach(button => { button.addEventListener('click', () => {
-        document.querySelectorAll('.payment-method-btn').forEach(btn => btn.classList.remove('active'));
-        button.classList.add('active');
-        const selectedMethod = button.dataset.method;
-        document.getElementById('selected-payment-method').value = selectedMethod;
-        document.getElementById('card-details-form').style.display = selectedMethod === 'Card' ? 'block' : 'none';
-        document.getElementById('paypal-message').style.display = selectedMethod === 'PayPal' ? 'block' : 'none';
-    }); });
     const checkoutDiscountForm = document.getElementById('checkout-discount-form');
     if (checkoutDiscountForm) { checkoutDiscountForm.addEventListener('submit', (e) => {
         e.preventDefault();
@@ -4399,7 +4322,6 @@ function displayCheckoutPage() {
     }); }
 
     if (checkoutStep === 1) attachValidationListeners('checkout-details-form');
-    if (checkoutStep === 2) attachValidationListeners('card-details-form');
 }
 // --- 2. ENSURE these two helper functions are in app.js ---
 const handleAddressSearch = debounce(async () => {
@@ -4444,7 +4366,13 @@ function removeDiscount() {
     const checkoutMsg = document.getElementById('checkout-discount-message');
     if (cartMsg) { cartMsg.textContent = ''; cartMsg.className = 'discount-message'; }
     if (checkoutMsg) { checkoutMsg.textContent = ''; checkoutMsg.className = 'discount-message'; }
-    updateCartTotals(); // Update UI everywhere
+    // See note in applyDiscount() -- full re-render on checkout step 2 so the
+    // PayPal-buttons-vs-Place-Order swap reflects the new total correctly.
+    if (checkoutStep === 2 && (document.getElementById('paypal-button-container') || document.getElementById('place-order-btn'))) {
+        displayCheckoutPage();
+    } else {
+        updateCartTotals(); // Update UI everywhere
+    }
 }
 
 async function placeOrder() {
@@ -4674,6 +4602,234 @@ async function placeGuestOrder() {
         if(btn) btn.disabled = false;
         if(txt) txt.style.display = 'inline';
         if(spin) spin.style.display = 'none';
+    }
+}
+
+// ===========================================================================
+// NEW (2026-07-22): Real PayPal payment processing.
+// Deliberately does NOT touch placeOrder()/placeGuestOrder() above (the
+// existing "Card" checkout) -- kept exactly as-is per instruction. This is
+// an entirely separate path used only when guestDetails.paymentMethod ===
+// 'PayPal', wired in at checkout step 3 (see displayCheckoutPage()).
+// ===========================================================================
+
+// Builds the same orderPayload shape placeOrder()/placeGuestOrder() build,
+// without sending it anywhere -- needed here because the PayPal button's
+// createOrder/onApprove callbacks need a fresh, validated payload at the
+// moment the buyer clicks, before any request is made.
+function buildOrderPayloadForPayPal() {
+    if (cart.length === 0) throw new Error('Your cart is empty.');
+
+    const { itemsSubtotal, deliveryChargeApplied, discountApplied, totalAmount } = calculateTotals();
+    const items = cart.map(item => ({
+        productId: item.id,
+        title: item.title,
+        quantity: item.quantity,
+        price: item.price,
+        isCustom: item.isCustom || false,
+        contents: item.isCustom ? item.contents : undefined,
+        imageUrl: getProductImageUrls(item)[0]
+    }));
+
+    const isLoggedIn = auth.isLoggedIn();
+
+    if (isLoggedIn) {
+        if (!auth.isVerified()) {
+            throw new Error('Please check your inbox and verify your email address before placing an order.');
+        }
+        for (const item of cart) {
+            const product = allProducts.find(p => p.id === item.id);
+            if (product && product.stock < item.quantity) {
+                throw new Error(`Sorry, only ${product.stock} units of ${item.title} are available.`);
+            }
+        }
+
+        const currentUser = auth.getCurrentUser();
+        let finalAddress;
+        if (userAddresses.length > 0 && selectedCheckoutAddressId) {
+            finalAddress = userAddresses.find(addr => addr.id === selectedCheckoutAddressId);
+            if (!finalAddress) throw new Error('The selected delivery address could not be found.');
+        } else {
+            storeGuestDetails();
+            finalAddress = {
+                fullName: guestDetails.name,
+                addressLine1: guestDetails.addressLine1,
+                city: guestDetails.city,
+                postcode: guestDetails.postcode
+            };
+            if (!finalAddress.fullName || !finalAddress.addressLine1 || !finalAddress.postcode) {
+                throw new Error('Please ensure all address details are filled in correctly.');
+            }
+        }
+
+        return {
+            finalAddress,
+            orderPayload: {
+                userId: currentUser.uid,
+                customerName: finalAddress.fullName,
+                customerEmail: currentUser.email,
+                deliveryAddress: finalAddress,
+                items,
+                itemsSubtotal, deliveryChargeApplied, discountApplied, totalAmount,
+                appliedDiscount: appliedDiscount || null
+            }
+        };
+    }
+
+    const finalAddress = {
+        fullName: guestDetails.name, addressLine1: guestDetails.addressLine1,
+        city: guestDetails.city, postcode: guestDetails.postcode
+    };
+    if (!finalAddress.fullName || !finalAddress.addressLine1 || !finalAddress.postcode) {
+        throw new Error('Please ensure all address details are filled in correctly.');
+    }
+
+    return {
+        finalAddress,
+        orderPayload: {
+            customerName: guestDetails.name,
+            customerEmail: guestDetails.email,
+            deliveryAddress: finalAddress,
+            items,
+            itemsSubtotal, deliveryChargeApplied, discountApplied, totalAmount,
+            appliedDiscount: appliedDiscount || null
+        }
+    };
+}
+
+// Posts JSON to our own API, attaching a Firebase auth token if the
+// customer is logged in, otherwise posting as a guest (mirrors what
+// placeOrder()/placeGuestOrder() each do separately, unified here since
+// this one function needs to handle both cases).
+async function postJsonMaybeAuth(url, body) {
+    const user = firebase.auth().currentUser;
+    const headers = { 'Content-Type': 'application/json' };
+    if (user) headers['Authorization'] = `Bearer ${await user.getIdToken()}`;
+
+    const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP error! status: ${response.status}`);
+    return data;
+}
+
+let paypalSdkPromise = null;
+function loadPayPalSdk() {
+    if (window.paypal) return Promise.resolve(window.paypal);
+    if (paypalSdkPromise) return paypalSdkPromise;
+    paypalSdkPromise = new Promise((resolve, reject) => {
+        if (typeof PAYPAL_CLIENT_ID === 'undefined' || !PAYPAL_CLIENT_ID) {
+            reject(new Error('PayPal is not configured.'));
+            return;
+        }
+        const script = document.createElement('script');
+        script.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(PAYPAL_CLIENT_ID)}&currency=GBP`;
+        script.onload = () => resolve(window.paypal);
+        script.onerror = () => reject(new Error('Failed to load the PayPal SDK.'));
+        document.head.appendChild(script);
+    });
+    return paypalSdkPromise;
+}
+
+function showOrderConfirmationPage(orderId, customerFirstName, totalAmount) {
+    if (typeof firebase !== 'undefined' && firebase.analytics && typeof totalAmount === 'number') {
+        const source = sessionStorage.getItem('last_order_source') || 'direct';
+        firebase.analytics().logEvent('purchase', {
+            transaction_id: orderId, value: totalAmount, currency: 'GBP', source
+        });
+        sessionStorage.removeItem('last_order_source');
+    }
+
+    pageCheckout.innerHTML = `<div class="order-confirmation"><h2>Thank You, ${customerFirstName}!</h2><p>Your order #${orderId} has been placed successfully.</p><button id="back-to-home-btn" class="btn btn-primary btn-full-width">Continue Shopping</button></div>`;
+    document.getElementById('back-to-home-btn').addEventListener('click', () => router.navigate('/'));
+
+    cart = [];
+    guestDetails = {};
+    appliedDiscount = null;
+    selectedCheckoutAddressId = null;
+    checkoutStep = 1;
+    updateCart();
+    if (auth.isLoggedIn()) fetchInitialUserData();
+}
+
+// Renders the real PayPal Smart Buttons into #paypal-button-container, if
+// that container is present on the page (it only exists on checkout step 3
+// when PayPal was the selected payment method -- see displayCheckoutPage()).
+// Safe to call on every displayCheckoutPage() render; no-ops otherwise.
+async function renderPayPalButtonsIfPresent() {
+    const container = document.getElementById('paypal-button-container');
+    if (!container) return;
+
+    // NEW (2026-07-22): show a real spinner (not just text) while the PayPal
+    // SDK script loads and the buttons render, and disable "Go Back" for
+    // that same window so it can't be tapped mid-load. This is the part of
+    // the loading sequence we actually control -- the "Debit or Credit
+    // Card" funding option's own click-to-expand behavior afterwards lives
+    // entirely inside PayPal's iframe and isn't something we can hook into.
+    const backLink = document.getElementById('checkout-back-btn');
+    const setBackLinkDisabled = (disabled) => {
+        if (!backLink) return;
+        backLink.classList.toggle('disabled-link', disabled);
+        if (disabled) backLink.setAttribute('aria-disabled', 'true');
+        else backLink.removeAttribute('aria-disabled');
+    };
+
+    setBackLinkDisabled(true);
+    container.innerHTML = '<div class="paypal-loading-state"><div class="spinner"></div><p class="text-center text-gray-500 text-sm mt-3">Connecting to PayPal&hellip;</p></div>';
+    try {
+        const paypal = await loadPayPalSdk();
+        container.innerHTML = '';
+        await paypal.Buttons({
+            style: { layout: 'vertical', color: 'gold', shape: 'rect', label: 'paypal' },
+            createOrder: async () => {
+                try {
+                    const { orderPayload } = buildOrderPayloadForPayPal();
+                    const result = await postJsonMaybeAuth('/api/paypal?action=create-order', { orderPayload });
+                    return result.paypalOrderId;
+                } catch (error) {
+                    // Surface our own validation/API error message rather than
+                    // letting the PayPal SDK swallow it into a generic one.
+                    console.error('PayPal createOrder failed:', error);
+                    showConfirmationModal(`Order Failed: ${error.message}`);
+                    throw error;
+                }
+            },
+            onApprove: async (data) => {
+                try {
+                    const { orderPayload, finalAddress } = buildOrderPayloadForPayPal();
+                    const result = await postJsonMaybeAuth('/api/paypal?action=capture-order', {
+                        paypalOrderId: data.orderID,
+                        orderPayload
+                    });
+                    showOrderConfirmationPage(result.orderId, (finalAddress.fullName || 'there').split(' ')[0], orderPayload.totalAmount);
+                } catch (error) {
+                    console.error('PayPal capture failed:', error);
+                    showConfirmationModal(`Order Failed: ${error.message}`);
+                }
+            },
+            onCancel: () => {
+                // Buyer closed the PayPal popup without approving -- leave
+                // them on the review step so they can try again.
+            },
+            onError: (error) => {
+                // Log everything enumerable on the error object, not just
+                // its default string form -- PayPal's SDK errors often carry
+                // extra detail (name, message, and sometimes a nested
+                // response body) that console.error(error) alone truncates
+                // or collapses in devtools.
+                console.error('PayPal Buttons error (full detail):', {
+                    message: error?.message,
+                    name: error?.name,
+                    stack: error?.stack,
+                    ...error
+                });
+                showConfirmationModal('Something went wrong with PayPal. Please try again.');
+            }
+        }).render('#paypal-button-container');
+        setBackLinkDisabled(false);
+    } catch (error) {
+        console.error('Failed to render PayPal buttons:', error);
+        container.innerHTML = `<p class="text-red-600 text-sm text-center">Could not load PayPal: ${error.message}</p>`;
+        setBackLinkDisabled(false);
     }
 }
 
@@ -5559,30 +5715,8 @@ async function renderOrderDetailPage(orderId) {
     }
 }
 
-function activateCancellationMode(order) {
-    const itemsContainer = document.querySelector('#page-order-detail .order-detail-items');
-    if (!itemsContainer) return;
-    const itemsWithCheckboxesHtml = order.items.map(item => {
-        const product = allProducts.find(p => p.id === item.productId);
-        const imageUrl = item.isCustom ? 'assets/images/custom_hamper_placeholder.jpg' : (product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A');
-        const checkboxHtml = order.items.length > 1 ? `<div class="cancellation-control"><input type="checkbox" name="cancel-item" value="${item.productId}" data-quantity="${item.quantity}"></div>` : '';
-        return `<div class="order-summary-item">${checkboxHtml}<img src="${imageUrl}" alt="${item.title}" class="cart-item-image"><div class="cart-item-info"><p class="cart-item-title">${item.title}</p><p>Qty: ${item.quantity}</p></div><span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span></div>`;
-    }).join('');
-    itemsContainer.innerHTML = `<form id="cancel-order-form"><p class="cancellation-prompt">Select items below to request a cancellation.</p>${itemsWithCheckboxesHtml}<div class="cancellation-actions"><button type="submit" id="cancel-selected-btn" class="btn btn-primary btn-sm">Cancel Selected Items</button><button type="button" id="cancel-full-order-btn" class="btn btn-danger btn-sm">Cancel Entire Order</button></div></form>`;
-    const cancelSelectedBtn = document.getElementById('cancel-selected-btn');
-    const cancelFullOrderBtn = document.getElementById('cancel-full-order-btn');
-    const returnLink = document.getElementById('show-return-form-btn');
-    const allCheckboxes = itemsContainer.querySelectorAll('input[name="cancel-item"]');
-    if (order.items.length === 1) { if (cancelSelectedBtn) cancelSelectedBtn.style.display = 'none'; }
-    const handleReturnLinkVisibility = () => { if (!returnLink) return; const allChecked = Array.from(allCheckboxes).every(cb => cb.checked); returnLink.style.display = allChecked ? 'none' : ''; };
-    allCheckboxes.forEach(checkbox => checkbox.addEventListener('input', handleReturnLinkVisibility));
-    if (cancelFullOrderBtn) { cancelFullOrderBtn.addEventListener('click', () => { if (returnLink) returnLink.style.display = 'none'; handleOrderCancellation(order.id, 'full'); }); }
-    document.getElementById('cancel-order-form').addEventListener('submit', (e) => { e.preventDefault(); handleOrderCancellation(order.id, 'partial'); });
-}
-
-// In app.js, REPLACE the activateCancellationMode helper function
-
-// In app.js, REPLACE the activateCancellationMode helper function
+// NOTE: an earlier duplicate, denser version of activateCancellationMode was removed here
+// (it was dead code, silently overwritten by the definition below).
 
 function activateCancellationMode(order) {
     const itemsContainer = document.querySelector('#page-order-detail .order-detail-items');
@@ -6282,33 +6416,10 @@ function forceModalOnTop() {
     if (overlay) overlay.style.zIndex = '2147483647';
 }
 
-// Helper function to handle the success UI and Navigation
-function finalizeSubmission(orderId) {
-    // 1. Update local data so the UI updates immediately
-    const order = userOrders.find(o => String(o.id) === String(orderId));
-    if (order) {
-        order.status = 'Completed (Reviewed)';
-    }
-
-    // 2. Reset button state (just in case)
-    const submitBtn = document.getElementById('submit-review-btn');
-    if (submitBtn) {
-        submitBtn.disabled = false;
-        const btnText = submitBtn.querySelector('.btn-text');
-        const spinner = submitBtn.querySelector('.spinner');
-        if (btnText) btnText.style.display = 'inline';
-        if (spinner) spinner.style.display = 'none';
-    }
-
-    // 3. SHOW SUCCESS MODAL AND NAVIGATE
-    showConfirmationModal("Success! Your reviews have been submitted.", () => {
-        console.log("🔴 User clicked OK. Navigating to orders...");
-        renderMyOrdersPage(); // Refresh orders list
-        router.navigate('/account/orders'); // GO BACK
-    });
-}
-
-// Helper function to handle the success UI
+// NOTE: an earlier duplicate finalizeSubmission was removed here (dead code, silently
+// overwritten by the definition below). That dead copy showed "Your reviews have been
+// submitted" — the live copy below shows "Reviews submitted (Simulation)". Worth checking
+// with Az whether the "(Simulation)" wording below is intentional or leftover test copy.
 function finalizeSubmission(orderId) {
     const order = userOrders.find(o => String(o.id) === String(orderId));
     if (order) {
@@ -6716,23 +6827,35 @@ function initScarcityTicker() {
     if (!tickerText) return;
 
     const locations = ['Kensington', 'Mayfair', 'Edinburgh', 'Chelsea', 'Bath', 'Hayes', 'Cambridge', 'Oxford', 'Brighton', 'Cornwall'];
-    const actions = ['just ordered', 'is viewing', 'reserved', 'sent a gift:', 'just reviewed'];
+
+    // Generic "trending" style copy -- previously this claimed a specific person
+    // in a specific place had just ordered/reserved/reviewed the product, which
+    // was entirely fabricated and could read as a real, specific activity report
+    // (a misleading social-proof pattern). These templates keep the same rotating
+    // "buzz" effect without asserting any real, specific event took place.
+    const templates = [
+        (product, loc) => `<strong>${product}</strong> is trending in <strong>${loc}</strong>`,
+        (product, loc) => `Popular this week in <strong>${loc}</strong>: <strong>${product}</strong>`,
+        (product, loc) => `<strong>${product}</strong> is a customer favourite in <strong>${loc}</strong>`,
+        (product) => `<strong>${product}</strong> is in high demand right now`,
+        (product, loc) => `Loved by shoppers in <strong>${loc}</strong>: <strong>${product}</strong>`
+    ];
 
     const updateTicker = () => {
         tickerText.classList.add('ticker-fade-out');
         setTimeout(() => {
             const randomLoc = locations[Math.floor(Math.random() * locations.length)];
-            const randomAction = actions[Math.floor(Math.random() * actions.length)];
+            const randomTemplate = templates[Math.floor(Math.random() * templates.length)];
             const randomProduct = allProducts.length > 0 ? allProducts[Math.floor(Math.random() * allProducts.length)].title : 'The Executive Hamper';
             const shortName = randomProduct.length > 25 ? randomProduct.substring(0, 25) + '...' : randomProduct;
 
-            tickerText.innerHTML = `Someone in <strong>${randomLoc}</strong> ${randomAction} <br><em>${shortName}</em>`;
+            tickerText.innerHTML = randomTemplate(shortName, randomLoc);
             tickerText.classList.remove('ticker-fade-out');
         }, 500);
     };
 
     updateTicker();
-    setInterval(updateTicker, Math.floor(Math.random() * 6000) + 6000); 
+    setInterval(updateTicker, Math.floor(Math.random() * 6000) + 6000);
 }
 // REPLACES existing fetchDiscoveryConfig in public/app.js
 
@@ -6801,59 +6924,44 @@ function initGalleryScroll(count) {
 
     const prevArrow = document.getElementById('gallery-prev');
     const nextArrow = document.getElementById('gallery-next');
-    const dots = document.querySelectorAll('.gallery-dot');
+    const counter = document.getElementById('gallery-counter');
 
-    // Scroll amount: Width of one slide
-    const getScrollAmount = () => {
-        const slide = track.querySelector('.gallery-slide');
-        return slide ? slide.offsetWidth : track.clientWidth;
+    const getCurrentIndex = () => {
+        const slides = Array.from(track.querySelectorAll('.gallery-slide'));
+        const center = track.scrollLeft + (track.clientWidth / 2);
+        let closest = 0, minDist = Infinity;
+        slides.forEach((slide, idx) => {
+            const dist = Math.abs(center - (slide.offsetLeft + slide.offsetWidth / 2));
+            if (dist < minDist) { minDist = dist; closest = idx; }
+        });
+        return closest;
+    };
+
+    // Go to a slide by index using scrollIntoView (not scrollBy with a raw pixel
+    // offset) so the browser's own scroll-snap machinery drives the animation
+    // instead of fighting it — a fixed-pixel scrollBy was landing the gallery
+    // partway between slides because `scroll-snap-type: x mandatory` on the
+    // track kept pulling the in-progress animation toward a different point.
+    const goToSlide = (idx) => {
+        const slides = track.querySelectorAll('.gallery-slide');
+        const clamped = Math.max(0, Math.min(idx, slides.length - 1));
+        const align = (clamped === slides.length - 1) ? 'end' : 'start';
+        if (slides[clamped]) {
+            slides[clamped].scrollIntoView({ behavior: 'smooth', inline: align, block: 'nearest' });
+        }
     };
 
     if (prevArrow) {
-        prevArrow.addEventListener('click', () => {
-            track.scrollBy({ left: -getScrollAmount(), behavior: 'smooth' });
-        });
+        prevArrow.addEventListener('click', () => goToSlide(getCurrentIndex() - 1));
     }
 
     if (nextArrow) {
-        nextArrow.addEventListener('click', () => {
-            track.scrollBy({ left: getScrollAmount(), behavior: 'smooth' });
-        });
+        nextArrow.addEventListener('click', () => goToSlide(getCurrentIndex() + 1));
     }
 
-    dots.forEach((dot, idx) => {
-        dot.addEventListener('click', () => {
-            const slides = track.querySelectorAll('.gallery-slide');
-            if (slides[idx]) {
-                // Scroll specifically to that element
-                slides[idx].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-            }
-        });
-    });
-
-    // Active Dot Sync on Scroll
+    // Keep the "X / Y" counter in sync as the gallery scrolls (arrow clicks,
+    // swipes, or dragging the track directly all funnel through this).
     track.addEventListener('scroll', () => {
-        // Calculate center point of the view
-        const center = track.scrollLeft + (track.clientWidth / 2);
-        
-        const slides = Array.from(track.querySelectorAll('.gallery-slide'));
-        let closestIndex = 0;
-        let minDistance = Infinity;
-
-        // Find which slide is closest to the center
-        slides.forEach((slide, index) => {
-            // slide.offsetLeft is relative to the track if track is positioned, 
-            // but usually we need to account for track's scroll. 
-            // Simpler approach for horizontal scroll:
-            const slideCenter = slide.offsetLeft + (slide.offsetWidth / 2);
-            const distance = Math.abs(center - slideCenter);
-            if (distance < minDistance) {
-                minDistance = distance;
-                closestIndex = index;
-            }
-        });
-
-        dots.forEach(d => d.classList.remove('active'));
-        if (dots[closestIndex]) dots[closestIndex].classList.add('active');
+        if (counter) counter.textContent = `${getCurrentIndex() + 1} / ${count}`;
     });
 }

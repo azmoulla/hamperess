@@ -1,6 +1,7 @@
 // FILE: api/admin-orders.js
 import admin from 'firebase-admin';
 import { db, verifyAdmin } from './_lib/firebase-admin-helper.js';
+import { sendShippingUpdate } from './_lib/brevo-helper.js';
 
 export default async function handler(req, res) {
     // 1. Universal Admin Security Check
@@ -202,6 +203,16 @@ export default async function handler(req, res) {
                         if (!creditSnap.empty) creditDoc = creditSnap.docs[0];
                     }
 
+                    // NEW: Discount codes (percent/fixed/shipping) -- re-fetch fresh
+                    // from Firestore rather than trusting the client-supplied
+                    // value/type, same pattern as api/orders.js.
+                    let discountDoc = null;
+                    if (!creditDoc && ['percent', 'fixed', 'shipping'].includes(appliedDiscount?.type) && appliedDiscount.id) {
+                        const discountRef = db.collection('discounts').doc(appliedDiscount.id);
+                        discountDoc = await transaction.get(discountRef);
+                        if (!discountDoc.exists) throw new Error('Discount code not found.');
+                    }
+
                     // Calculation Phase
                     const itemsSubtotal = items.reduce((sum, i) => sum + (i.price * i.quantity), 0);
                     let deliveryCharge = itemsSubtotal < 50 ? 4.99 : 0;
@@ -211,10 +222,53 @@ export default async function handler(req, res) {
                     }
 
                     let discount = 0;
-                    if (appliedDiscount && typeof appliedDiscount.value === 'number') {
-                        if (appliedDiscount.type === 'percent') discount = (itemsSubtotal * appliedDiscount.value) / 100;
-                        else discount = appliedDiscount.value;
+                    const customerEmailLower = (customerDetails.email || '').trim().toLowerCase();
+
+                    if (discountDoc) {
+                        // NEW: authoritative discount-code validation -- mirrors
+                        // api/orders.js. Every check re-reads from `discountData`
+                        // (fresh from Firestore), never from the client-supplied
+                        // `appliedDiscount`.
+                        const discountData = discountDoc.data();
+                        const now = new Date();
+
+                        if (!discountData.isActive) throw new Error('This discount code is no longer active.');
+                        if (discountData.startDate && now < new Date(discountData.startDate)) {
+                            throw new Error('This discount code is not active yet.');
+                        }
+                        if (discountData.endDate) {
+                            const end = new Date(discountData.endDate);
+                            end.setHours(23, 59, 59, 999);
+                            if (now > end) throw new Error('This discount code has expired.');
+                        }
+                        if (typeof discountData.maxUses === 'number' && discountData.maxUses !== null && (discountData.usageCount || 0) >= discountData.maxUses) {
+                            throw new Error('This discount code has reached its usage limit.');
+                        }
+                        if (typeof discountData.minOrderValue === 'number' && discountData.minOrderValue !== null && itemsSubtotal < discountData.minOrderValue) {
+                            throw new Error(`This code requires a minimum order of £${discountData.minOrderValue.toFixed(2)}.`);
+                        }
+                        if (discountData.oneRedemptionPerCustomer && customerEmailLower && (discountData.usedByEmails || []).includes(customerEmailLower)) {
+                            throw new Error('This discount code has already been used on this customer\'s account.');
+                        }
+
+                        const applicableProductIds = discountData.applicableProductIds || [];
+                        const applicableCategories = discountData.applicableCategories || [];
+                        if (applicableProductIds.length > 0 || applicableCategories.length > 0) {
+                            const cartQualifies = items.some(item => {
+                                const pDoc = productDocs.find(doc => doc.id === item.id);
+                                const pData = pDoc && pDoc.exists ? pDoc.data() : null;
+                                const idMatch = applicableProductIds.includes(item.id);
+                                const catMatch = pData && applicableCategories.includes(pData.category);
+                                return idMatch || catMatch;
+                            });
+                            if (!cartQualifies) throw new Error('This discount code is not valid for the items in this order.');
+                        }
+
+                        if (discountData.type === 'percent') discount = (itemsSubtotal * discountData.value) / 100;
+                        else if (discountData.type === 'fixed') discount = discountData.value;
+                        else if (discountData.type === 'shipping') discount = deliveryCharge;
                     }
+
                     const total = (itemsSubtotal + deliveryCharge) - Math.min(itemsSubtotal + deliveryCharge, discount);
 
                     // Write Phase
@@ -230,6 +284,15 @@ export default async function handler(req, res) {
                             isActive: remaining > 0,
                             usageHistory: admin.firestore.FieldValue.arrayUnion({ orderId, amountUsed: discount, date: new Date() })
                         });
+                    }
+
+                    // NEW: Update Discount Code usage (if used)
+                    if (discountDoc) {
+                        const discountUpdate = { usageCount: admin.firestore.FieldValue.increment(1) };
+                        if (customerEmailLower) {
+                            discountUpdate.usedByEmails = admin.firestore.FieldValue.arrayUnion(customerEmailLower);
+                        }
+                        transaction.update(discountDoc.ref, discountUpdate);
                     }
 
                     transaction.set(newOrderRef, {
@@ -288,6 +351,18 @@ export default async function handler(req, res) {
             }
 
             await db.collection('orders').doc(orderId).update(updateData);
+
+            // Fire the shipping-update email, but never let a Brevo problem
+            // affect this response -- the status change already succeeded.
+            if (newStatus === 'Shipped') {
+                try {
+                    const orderDoc = await db.collection('orders').doc(orderId).get();
+                    if (orderDoc.exists) await sendShippingUpdate(orderDoc.data());
+                } catch (emailError) {
+                    console.error(`Order ${orderId} marked Shipped OK, but shipping email failed:`, emailError.message);
+                }
+            }
+
             return res.status(200).json({ success: true, message: `Order ${orderId} updated.` });
         }
 

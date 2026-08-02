@@ -204,10 +204,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let allComponents = [];
     let allReturns = [];
     let allVouchers = [];
+    let allDiscounts = []; // NEW: separate from allVouchers (store credits)
     let newOrderItems = [];
     let currentHamperContents = [];
     let currentEditMode = 'product';
     let posAppliedDiscount = null;
+    let editingDiscountId = null; // NEW: tracks which discount code (if any) is being edited in create-discount-form
     let currentOrderForCancellation = null;
     let replacementContext = null;
     window.currentOrders = [];
@@ -243,6 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const creditModal = document.getElementById('issue-credit-modal');
     const createOrderForm = document.getElementById('create-order-form');
     const standaloneForm = document.getElementById('create-standalone-voucher-form');
+    const discountForm = document.getElementById('create-discount-form'); // NEW: discount codes, separate from standaloneForm above
     const printBtn = document.getElementById('print-picking-list-btn');
     const pickingListFilterBtn = document.getElementById('picking-list-filter-btn');
     const fulfillmentPage = document.getElementById('page-fulfillment');
@@ -269,6 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         populateComponents(),
                         fetchAllReturns(),
                         fetchAllVouchers(),
+                        fetchAllDiscounts(),
                         populateMenuEditor(),
                         (async () => {
         try {
@@ -437,6 +441,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // NEW: separate from fetchAllVouchers (store credits) below -- fetches
+    // the discounts collection via its own admin-listing action.
+    async function fetchAllDiscounts() {
+        if (!fbAuth.currentUser) return;
+        try {
+            const token = await fbAuth.currentUser.getIdToken();
+            const response = await fetch('/api/vouchers?adminList=discounts', { headers: { 'Authorization': `Bearer ${token}` } });
+            if (!response.ok) throw new Error('Failed to fetch discount codes.');
+            allDiscounts = await response.json();
+        } catch (error) {
+            console.error('Failed to fetch discount codes:', error);
+        }
+    }
+
     async function fetchAllVouchers() {
         if (!fbAuth.currentUser) return;
         try {
@@ -450,15 +468,58 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function updateOrderStatus(orderId, updatePayload) {
-        if (!fbAuth.currentUser) return;
+        if (!fbAuth.currentUser) return false;
         try {
             const token = await fbAuth.currentUser.getIdToken();
             const response = await fetch('/api/admin-orders', { method: 'PUT', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, ...updatePayload }) });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error);
             showAdminNotification(result.message);
+
+            // FIX: this used to only show a notification -- it never touched
+            // the DOM, so after a successful save the order card's header
+            // badge kept showing the old status (e.g. "Pending") and the
+            // cached window.currentOrders entry (used to compute
+            // "originalStatus" on the NEXT status change) stayed stale too.
+            // Also, since the courier/tracking number were only ever shown
+            // in the editable form -- which gets hidden right after a
+            // successful save -- there was nowhere left to see them. Mirror
+            // performCancellation()'s pattern: update the badge, the select,
+            // the cache, and a permanent read-only tracking line.
+            const newStatus = updatePayload.newStatus;
+            if (newStatus) {
+                const cachedOrder = window.currentOrders?.find(o => o.docId === orderId);
+                if (cachedOrder) {
+                    cachedOrder.status = newStatus;
+                    if (updatePayload.trackingNumber) cachedOrder.trackingNumber = updatePayload.trackingNumber;
+                    if (updatePayload.courier) cachedOrder.courier = updatePayload.courier;
+                }
+
+                const card = document.querySelector(`.order-card[data-doc-id="${orderId}"]`);
+                if (card) {
+                    const newStatusClass = newStatus.toLowerCase().replace(/\s/g, '-');
+                    const headerBadge = card.querySelector('.order-card-header .status-badge');
+                    if (headerBadge) {
+                        headerBadge.textContent = newStatus;
+                        headerBadge.className = `status-badge status-${newStatusClass}`;
+                    }
+                    const statusSelect = card.querySelector('.order-status-select');
+                    if (statusSelect) statusSelect.value = newStatus;
+
+                    if (updatePayload.trackingNumber && updatePayload.courier) {
+                        const trackingDisplay = card.querySelector('.tracking-display');
+                        if (trackingDisplay) {
+                            const trackingNumberClean = updatePayload.trackingNumber.trim().toUpperCase();
+                            trackingDisplay.innerHTML = `Shipped via <strong>${updatePayload.courier}</strong> &mdash; Tracking #: <strong>${trackingNumberClean}</strong>`;
+                            trackingDisplay.classList.remove('hidden');
+                        }
+                    }
+                }
+            }
+            return true;
         } catch (error) {
             showAdminNotification(`Error: ${error.message}`, true);
+            return false;
         }
     }
 
@@ -592,7 +653,7 @@ if (adminSidebar) {
                 'page-admin-delivery-info': renderAdminDeliveryInfoPage,
                 'page-products': () => renderProductsTable(allProducts),
                 'page-components': () => renderComponentsTable(allComponents),
-                'page-vouchers': () => renderVouchersTable(allVouchers),
+                'page-vouchers': () => { renderVouchersTable(allVouchers); renderDiscountsTable(allDiscounts); },
                 'page-fulfillment': () => { showPickingList(); showOrdersToPack(); },
                 'page-menu': populateMenuEditor, 
                 'page-admin-footer': renderAdminFooterPage,
@@ -847,6 +908,81 @@ function renderVouchersTable(vouchers) {
     tableHtml += `</tbody></table></div>`;
     container.innerHTML = tableHtml;
     console.log("--- DIAGNOSTIC RENDER COMPLETE ---");
+}
+
+// NEW: renders the `discounts` collection table -- entirely separate from
+// renderVouchersTable (store credits) above, which is untouched.
+function renderDiscountsTable(discounts) {
+    const container = document.getElementById('discounts-table-container');
+    if (!container) return;
+
+    if (!Array.isArray(discounts) || discounts.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-sm p-4">No discount codes found.</p>';
+        return;
+    }
+
+    const formatValue = (d) => {
+        if (d.type === 'percent') return `${d.value}% off`;
+        if (d.type === 'fixed') return `£${Number(d.value || 0).toFixed(2)} off`;
+        if (d.type === 'shipping') return 'Free shipping';
+        return d.value;
+    };
+    const formatValidity = (d) => {
+        if (!d.startDate && !d.endDate) return 'No limit';
+        return `${d.startDate || '...'} to ${d.endDate || '...'}`;
+    };
+    const formatUses = (d) => `${d.usageCount || 0} / ${(d.maxUses === null || d.maxUses === undefined) ? '∞' : d.maxUses}`;
+    const formatRestrictions = (d) => {
+        const parts = [];
+        if (d.minOrderValue) parts.push(`Min £${Number(d.minOrderValue).toFixed(2)}`);
+        if (d.oneRedemptionPerCustomer) parts.push('1 per customer');
+        if ((d.applicableProductIds || []).length) parts.push(`${d.applicableProductIds.length} product(s)`);
+        if ((d.applicableCategories || []).length) parts.push(`${d.applicableCategories.length} categor${d.applicableCategories.length === 1 ? 'y' : 'ies'}`);
+        return parts.length ? parts.join(', ') : 'None';
+    };
+
+    let tableHtml = `<div class="overflow-x-auto"><table class="min-w-full bg-white border"><thead class="bg-gray-50"><tr>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Discount</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validity</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Uses</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Restrictions</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+    </tr></thead><tbody class="divide-y divide-gray-200">`;
+
+    const escAttr = (v) => String(v === null || v === undefined ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+
+    discounts.forEach((d) => {
+        const isActive = d.isActive === true;
+        tableHtml += `<tr>
+            <td class="px-6 py-4 font-mono text-sm">${d.code || 'MISSING CODE'}</td>
+            <td class="px-6 py-4 text-sm">${formatValue(d)}</td>
+            <td class="px-6 py-4 text-sm">${formatValidity(d)}</td>
+            <td class="px-6 py-4 text-sm">${formatUses(d)}</td>
+            <td class="px-6 py-4 text-sm">${formatRestrictions(d)}</td>
+            <td class="px-6 py-4 text-sm"><span class="status-badge ${isActive ? 'status-approved' : 'status-cancelled'}">${isActive ? 'Active' : 'Inactive'}</span></td>
+            <td class="px-6 py-4 text-sm whitespace-nowrap">
+                <button class="edit-discount-btn text-sm font-medium text-blue-600 hover:text-blue-900 mr-3"
+                    data-discount-id="${d.id}"
+                    data-code="${escAttr(d.code)}"
+                    data-type="${escAttr(d.type)}"
+                    data-value="${escAttr(d.value)}"
+                    data-start-date="${escAttr(d.startDate)}"
+                    data-end-date="${escAttr(d.endDate)}"
+                    data-max-uses="${escAttr(d.maxUses)}"
+                    data-one-per-customer="${escAttr(d.oneRedemptionPerCustomer)}"
+                    data-min-order="${escAttr(d.minOrderValue)}"
+                    data-product-ids="${escAttr((d.applicableProductIds || []).join(', '))}"
+                    data-categories="${escAttr((d.applicableCategories || []).join(', '))}"
+                >Edit</button>
+                <button class="toggle-discount-active-btn text-sm font-medium ${isActive ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'}" data-discount-id="${d.id}" data-currently-active="${isActive}">${isActive ? 'Deactivate' : 'Reactivate'}</button>
+            </td>
+        </tr>`;
+    });
+
+    tableHtml += `</tbody></table></div>`;
+    container.innerHTML = tableHtml;
 }
 
     function renderPickingList(items) {
@@ -1149,7 +1285,7 @@ async function populateMenuEditor() {
 
     try {
         const token = await fbAuth.currentUser.getIdToken();
-       const apiUrl = '/api/admin-orders?action=details&orderId=${orderId}';
+       const apiUrl = `/api/admin-orders?action=details&orderId=${orderId}`;
         
         const response = await fetch(apiUrl, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -1435,7 +1571,7 @@ if (orderCardHeader) {
             const orderDocId = card.dataset.docId;
             const orderShortId = card.dataset.orderId;
 
-            const response = await fetch(`/api/admin-orders?action=rich?orderId=${orderShortId}`, {
+            const response = await fetch(`/api/admin-orders?action=rich&orderId=${orderShortId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!response.ok) throw new Error('Could not fetch rich order details.');
@@ -1474,9 +1610,12 @@ if (orderCardHeader) {
                     <div class="space-y-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Fulfillment Status</label>
-                            <select class="order-status-select p-2 border border-gray-300 rounded-md w-full" data-order-id="${orderDocId}" ${isTerminalState ? 'disabled' : ''}>
-                                ${statuses.map(s => `<option value="${s}" ${richOrder.status === s ? 'selected' : ''}>${s}</option>`).join('')}
-                            </select>
+                            <div class="flex items-center gap-2">
+                                <select class="order-status-select p-2 border border-gray-300 rounded-md w-full" data-order-id="${orderDocId}" ${isTerminalState ? 'disabled' : ''}>
+                                    ${statuses.map(s => `<option value="${s}" ${richOrder.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                </select>
+                                ${isTerminalState ? `<button type="button" class="unlock-status-btn shrink-0 text-gray-400 hover:text-gray-700" data-order-id="${orderDocId}" title="Unlock to manually override this status"><i class="fas fa-pen"></i></button>` : ''}
+                            </div>
                             <div id="tracking-form-${orderDocId}" class="mt-2 space-y-2 ${richOrder.status === 'Shipped' ? '' : 'hidden'}">
                                 <select class="tracking-courier w-full p-2 border rounded-md">
                                     <option ${richOrder.courier === 'Royal Mail' ? 'selected' : ''}>Royal Mail</option>
@@ -1486,6 +1625,10 @@ if (orderCardHeader) {
                                 <input type="text" class="tracking-number w-full p-2 border rounded-md" placeholder="Tracking Number" value="${richOrder.trackingNumber || ''}">
                                 <button class="save-tracking-btn text-white bg-blue-600 hover:bg-blue-700 text-xs font-medium px-3 py-1 rounded-md" data-order-id="${orderDocId}">Save Tracking</button>
                             </div>
+                            <p class="tracking-display text-xs text-gray-600 mt-2 ${richOrder.trackingNumber ? '' : 'hidden'}">
+                                Shipped via <strong>${richOrder.courier || 'N/A'}</strong> &mdash; Tracking #: <strong>${richOrder.trackingNumber || ''}</strong>
+                                ${richOrder.courierUrl && richOrder.trackingNumber ? ` &mdash; <a href="${richOrder.courierUrl}${encodeURIComponent(richOrder.trackingNumber)}" target="_blank" rel="noopener" class="text-blue-600 underline">Track parcel</a>` : ''}
+                            </p>
                         </div>
                         <div class="flex items-center space-x-2">
                             <button class="packing-slip-btn text-green-600 hover:text-green-900 text-sm font-medium" data-order-id="${orderDocId}">View Packing Slip</button>
@@ -1585,8 +1728,30 @@ if (returnActionTarget) {
 
             const cancelOrderTarget = e.target.closest('.cancel-order-btn');
             if (cancelOrderTarget) { openCancellationModal(cancelOrderTarget.dataset.orderId); return; }
+            // NEW: escape hatch for locked statuses. The dropdown is disabled
+            // once an order reaches a terminal state (Shipped, Completed,
+            // Cancelled, Returned, Partially Cancelled) so it can't be
+            // changed by accident -- but that left no way to manually
+            // correct a status if it was ever set wrong. This unlocks the
+            // dropdown for this one card, on demand, after a confirmation.
+            const unlockStatusTarget = e.target.closest('.unlock-status-btn');
+            if (unlockStatusTarget) {
+                const card = unlockStatusTarget.closest('.order-card');
+                showAdminConfirm('This status is locked to prevent accidental changes after shipping/cancellation/completion. Unlock it to manually override? Use with care -- this bypasses the normal returns/cancellation flow.', () => {
+                    if (!card) return;
+                    const select = card.querySelector('.order-status-select');
+                    if (select) select.disabled = false;
+                    unlockStatusTarget.remove();
+                });
+                return;
+            }
             const saveTrackingTarget = e.target.closest('.save-tracking-btn');
-            if (saveTrackingTarget) { const orderId = saveTrackingTarget.dataset.orderId; const row = document.getElementById(`order-row-${orderId}`); if (row) { const courier = row.querySelector('.tracking-courier').value; const trackingNumber = row.querySelector('.tracking-number').value; if (trackingNumber) { await updateOrderStatus(orderId, { newStatus: 'Shipped', trackingNumber, courier }); row.querySelector('.order-status-select').value = 'Shipped'; row.querySelector(`#tracking-form-${orderId}`).classList.add('hidden'); } else { showAdminNotification('Please enter a tracking number.', true); } } return; }
+            // FIX: this used to look up `#order-row-${orderId}`, an element that
+            // is never actually created anywhere in the markup (the tracking
+            // inputs and status select all live inside `.order-card`, not a
+            // "row"), so `row` was always null and the button silently did
+            // nothing. Scope to the actual containing `.order-card` instead.
+            if (saveTrackingTarget) { const orderId = saveTrackingTarget.dataset.orderId; const card = saveTrackingTarget.closest('.order-card'); if (card) { const courier = card.querySelector('.tracking-courier').value; const trackingNumber = card.querySelector('.tracking-number').value; if (trackingNumber) { const saved = await updateOrderStatus(orderId, { newStatus: 'Shipped', trackingNumber, courier }); if (saved) { card.querySelector(`#tracking-form-${orderId}`).classList.add('hidden'); } } else { showAdminNotification('Please enter a tracking number.', true); } } return; }
             const issueCreditTarget = e.target.closest('.issue-credit-btn');
             if (issueCreditTarget) { const { returnId, returnPath, value, customerEmail } = issueCreditTarget.dataset; document.getElementById('modal-return-id').textContent = returnId; document.getElementById('modal-customer-email').textContent = customerEmail; document.getElementById('credit-value-input').value = parseFloat(value).toFixed(2); document.getElementById('modal-hidden-return-path').value = returnPath; document.getElementById('modal-hidden-customer-email').value = customerEmail; if (creditModal) creditModal.classList.remove('hidden'); return; }
             const createReplacementTarget = e.target.closest('.create-replacement-btn');
@@ -1775,6 +1940,120 @@ if (createReplacementTarget) {
     if (closeCancelModalBtn) { closeCancelModalBtn.addEventListener('click', () => { if(cancelModal) cancelModal.classList.add('hidden'); currentOrderForCancellation = null; }); }
     
     if(standaloneForm) { standaloneForm.addEventListener('submit', async (e) => { e.preventDefault(); const email = document.getElementById('standalone-email').value; const value = document.getElementById('standalone-value').value; showAdminConfirm(`Generate a voucher for £${value} for ${email}?`, async () => { try { const token = await fbAuth.currentUser.getIdToken(); const response = await fetch('/api/vouchers', { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ customerEmail: email, value: value }) }); const result = await response.json(); if (!response.ok) throw new Error(result.error); showAdminNotification(`Success! Code ${result.code} created.`); standaloneForm.reset(); await fetchAllVouchers(); renderVouchersTable(allVouchers); } catch(error) { showAdminNotification(`Error: ${error.message}`, true); } }); }); }
+
+    // NEW: discount code creation/editing -- entirely separate submit
+    // handler/endpoint path from standaloneForm above (store credits
+    // untouched). The same form is reused for editing: editingDiscountId
+    // being set switches the submit handler to the update-discount action
+    // instead of create, and leaves `code` alone (immutable).
+    const discountCodeInput = document.getElementById('discount-code');
+    const discountFormSubmitBtn = document.getElementById('discount-form-submit-btn');
+    const discountFormCancelBtn = document.getElementById('discount-form-cancel-btn');
+
+    function exitDiscountEditMode() {
+        editingDiscountId = null;
+        if (discountForm) discountForm.reset();
+        if (discountCodeInput) discountCodeInput.disabled = false;
+        if (discountFormSubmitBtn) discountFormSubmitBtn.textContent = 'Create Discount Code';
+        if (discountFormCancelBtn) discountFormCancelBtn.classList.add('hidden');
+    }
+
+    if (discountForm) {
+        discountForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fields = {
+                discountType: document.getElementById('discount-type').value,
+                value: document.getElementById('discount-value').value,
+                startDate: document.getElementById('discount-start-date').value || null,
+                endDate: document.getElementById('discount-end-date').value || null,
+                maxUses: document.getElementById('discount-max-uses').value || null,
+                oneRedemptionPerCustomer: document.getElementById('discount-one-per-customer').checked,
+                minOrderValue: document.getElementById('discount-min-order').value || null,
+                applicableProductIds: document.getElementById('discount-product-ids').value,
+                applicableCategories: document.getElementById('discount-categories').value
+            };
+
+            const isEditing = !!editingDiscountId;
+            const payload = isEditing
+                ? { kind: 'update-discount', id: editingDiscountId, ...fields }
+                : { kind: 'discount', code: discountCodeInput.value, ...fields };
+            const confirmMessage = isEditing
+                ? `Save changes to discount code "${discountCodeInput.value.toUpperCase()}"?`
+                : `Create discount code "${discountCodeInput.value.toUpperCase()}"?`;
+
+            showAdminConfirm(confirmMessage, async () => {
+                try {
+                    const token = await fbAuth.currentUser.getIdToken();
+                    const response = await fetch('/api/vouchers', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error);
+                    showAdminNotification(isEditing ? 'Discount code updated.' : `Success! Discount code ${result.code} created.`);
+                    exitDiscountEditMode();
+                    await fetchAllDiscounts();
+                    renderDiscountsTable(allDiscounts);
+                } catch (error) {
+                    showAdminNotification(`Error: ${error.message}`, true);
+                }
+            });
+        });
+    }
+
+    if (discountFormCancelBtn) {
+        discountFormCancelBtn.addEventListener('click', () => exitDiscountEditMode());
+    }
+
+    // NEW: edit / activate / deactivate a discount code from the table above.
+    const discountsTableContainer = document.getElementById('discounts-table-container');
+    if (discountsTableContainer) {
+        discountsTableContainer.addEventListener('click', async (e) => {
+            const editBtn = e.target.closest('.edit-discount-btn');
+            if (editBtn) {
+                const d = editBtn.dataset;
+                editingDiscountId = d.discountId;
+                if (discountCodeInput) { discountCodeInput.value = d.code; discountCodeInput.disabled = true; }
+                document.getElementById('discount-type').value = d.type;
+                document.getElementById('discount-value').value = d.value;
+                document.getElementById('discount-start-date').value = d.startDate || '';
+                document.getElementById('discount-end-date').value = d.endDate || '';
+                document.getElementById('discount-max-uses').value = (d.maxUses === 'null' || !d.maxUses) ? '' : d.maxUses;
+                document.getElementById('discount-one-per-customer').checked = d.onePerCustomer === 'true';
+                document.getElementById('discount-min-order').value = (d.minOrder === 'null' || !d.minOrder) ? '' : d.minOrder;
+                document.getElementById('discount-product-ids').value = d.productIds || '';
+                document.getElementById('discount-categories').value = d.categories || '';
+                if (discountFormSubmitBtn) discountFormSubmitBtn.textContent = 'Save Changes';
+                if (discountFormCancelBtn) discountFormCancelBtn.classList.remove('hidden');
+                discountForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+
+            const toggleBtn = e.target.closest('.toggle-discount-active-btn');
+            if (toggleBtn) {
+                const { discountId, currentlyActive } = toggleBtn.dataset;
+                const goingActive = currentlyActive !== 'true';
+                showAdminConfirm(`${goingActive ? 'Reactivate' : 'Deactivate'} this discount code?`, async () => {
+                    try {
+                        const token = await fbAuth.currentUser.getIdToken();
+                        const response = await fetch('/api/vouchers', {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ kind: 'toggle-discount-active', id: discountId, isActive: goingActive })
+                        });
+                        const result = await response.json();
+                        if (!response.ok) throw new Error(result.error);
+                        showAdminNotification('Discount code updated.');
+                        await fetchAllDiscounts();
+                        renderDiscountsTable(allDiscounts);
+                    } catch (error) {
+                        showAdminNotification(`Error: ${error.message}`, true);
+                    }
+                });
+            }
+        });
+    }
 
     const menuForm = document.getElementById('menu-form');
 if (menuForm) {
@@ -2257,7 +2536,7 @@ async function renderAdminFaqsPage() {
 
     try {
         // Fetch the array of FAQs
-        const faqsArray = await fetchAdminAPI('content-manager.js'); // Fetch data
+        const faqsArray = await fetchAdminAPI('/api/content-manager?page=faqs'); // Fetch data
         container.innerHTML = ''; // Clear loading
 
         if (faqsArray && faqsArray.length > 0) {
@@ -2309,7 +2588,7 @@ async function renderAdminFaqsPage() {
         }
 
         try {
-            const response = await fetchAdminAPI('content-manager.js', {
+            const response = await fetchAdminAPI('/api/content-manager?page=faqs', {
                 method: 'POST',
                 // Send the data wrapped in an object with the 'faqs' key
                 body: JSON.stringify({ faqs: faqsData })

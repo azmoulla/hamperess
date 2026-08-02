@@ -16,6 +16,48 @@ function generateUniqueCode() {
     return code;
 }
 
+// NEW: discount codes (the `discounts` collection) are a separate feature
+// from store credits -- percent/fixed/shipping promo codes with optional
+// constraints (validity window, usage cap, per-customer limit, min order
+// value, product/category restriction). These helpers only touch that
+// collection; store credit logic below is untouched.
+function parseOptionalDate(value) {
+    if (!value) return null;
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+}
+
+function endOfDay(date) {
+    const d = new Date(date);
+    d.setHours(23, 59, 59, 999);
+    return d;
+}
+
+function csvToArray(value) {
+    if (Array.isArray(value)) return value.map(v => String(v).trim()).filter(Boolean);
+    if (!value) return [];
+    return String(value).split(',').map(v => v.trim()).filter(Boolean);
+}
+
+// Checks the constraints that DON'T require cart/customer context (date
+// window + global usage cap). minOrderValue, product/category restriction,
+// and the per-customer limit need the cart and the customer's identity, so
+// those are enforced authoritatively at order-creation time instead (see
+// api/orders.js and api/admin-orders.js) -- this is only a pre-check for
+// the "apply code" UX at checkout.
+function checkDiscountAvailability(data) {
+    if (!data.isActive) return 'This code is no longer active.';
+    const now = new Date();
+    const start = parseOptionalDate(data.startDate);
+    if (start && now < start) return 'This code is not active yet.';
+    const end = parseOptionalDate(data.endDate);
+    if (end && now > endOfDay(end)) return 'This code has expired.';
+    if (typeof data.maxUses === 'number' && data.maxUses !== null && (data.usageCount || 0) >= data.maxUses) {
+        return 'This code has reached its usage limit.';
+    }
+    return null;
+}
+
 // --- MAIN HANDLER ---
 export default async function handler(req, res) {
     const { code } = req.query;
@@ -25,7 +67,23 @@ export default async function handler(req, res) {
         // GET REQUESTS
         // ==========================================
         if (req.method === 'GET') {
-            
+
+            // --- NEW CASE: Get All Discount Codes (Admin Only) ---
+            // Separate from the storeCredits listing below -- does not
+            // touch or affect it.
+            if (req.query.adminList === 'discounts') {
+                if (!(await verifyAdmin(req))) return res.status(403).json({ error: 'Forbidden' });
+                const snapshot = await db.collection('discounts').orderBy('creationDate', 'desc').get();
+                const discounts = snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    if (data.creationDate && typeof data.creationDate.toDate === 'function') {
+                        data.creationDate = data.creationDate.toDate().toISOString();
+                    }
+                    return { id: doc.id, ...data };
+                });
+                return res.status(200).json(discounts);
+            }
+
             // --- CASE A: Validate Discount (Public) ---
             // (Replaces validate-discount.js)
             if (code) {
@@ -34,12 +92,16 @@ export default async function handler(req, res) {
                 // 1. Check Standard Discounts
                 const discountSnap = await db.collection('discounts')
                     .where('code', '==', upperCaseCode)
-                    .where('isActive', '==', true)
                     .limit(1).get();
 
                 if (!discountSnap.empty) {
                     const doc = discountSnap.docs[0];
-                    return res.status(200).json({ id: doc.id, ...doc.data() });
+                    const data = doc.data();
+                    const unavailableReason = checkDiscountAvailability(data);
+                    if (unavailableReason) {
+                        return res.status(404).json({ error: unavailableReason });
+                    }
+                    return res.status(200).json({ id: doc.id, ...data });
                 }
 
                 // 2. Check Store Credits
@@ -87,10 +149,108 @@ export default async function handler(req, res) {
         // ==========================================
         // POST REQUESTS
         // ==========================================
-        // (Replaces generate-store-credit.js)
         if (req.method === 'POST') {
             if (!(await verifyAdmin(req))) return res.status(403).json({ error: 'Forbidden' });
 
+            // --- NEW: Create a Discount Code ---
+            // Entirely separate from store credit creation below -- keyed
+            // off `kind` so the existing store-credit request shape (no
+            // `kind` field) falls through to the untouched logic further
+            // down.
+            if (req.body.kind === 'discount') {
+                const {
+                    code: rawCode, discountType, value: discountValue,
+                    startDate, endDate, maxUses,
+                    oneRedemptionPerCustomer, minOrderValue,
+                    applicableProductIds, applicableCategories
+                } = req.body;
+
+                if (!rawCode || !discountType || discountValue === undefined || discountValue === null || discountValue === '') {
+                    return res.status(400).json({ error: 'Code, type, and value are required.' });
+                }
+                const upperCode = String(rawCode).trim().toUpperCase();
+                if (!upperCode) return res.status(400).json({ error: 'Code is required.' });
+                if (!['percent', 'fixed', 'shipping'].includes(discountType)) {
+                    return res.status(400).json({ error: 'Type must be percent, fixed, or shipping.' });
+                }
+
+                const existing = await db.collection('discounts').where('code', '==', upperCode).limit(1).get();
+                if (!existing.empty) {
+                    return res.status(409).json({ error: `Code "${upperCode}" already exists.` });
+                }
+
+                const discountRef = db.collection('discounts').doc();
+                const discountData = {
+                    code: upperCode,
+                    type: discountType,
+                    value: Number(discountValue) || 0,
+                    isActive: true,
+                    creationDate: admin.firestore.FieldValue.serverTimestamp(),
+                    startDate: startDate || null,
+                    endDate: endDate || null,
+                    maxUses: (maxUses !== undefined && maxUses !== null && maxUses !== '') ? Number(maxUses) : null,
+                    usageCount: 0,
+                    oneRedemptionPerCustomer: !!oneRedemptionPerCustomer,
+                    usedByEmails: [],
+                    minOrderValue: (minOrderValue !== undefined && minOrderValue !== null && minOrderValue !== '') ? Number(minOrderValue) : null,
+                    applicableProductIds: csvToArray(applicableProductIds),
+                    applicableCategories: csvToArray(applicableCategories)
+                };
+
+                await discountRef.set(discountData);
+                return res.status(200).json({ success: true, code: upperCode });
+            }
+
+            // --- NEW: Edit an existing Discount Code ---
+            // Updates the admin-set fields only -- `code`, `isActive`,
+            // `usageCount`, `usedByEmails`, and `creationDate` are left
+            // alone (code is immutable to avoid collision/history issues;
+            // isActive has its own toggle action; usage tracking shouldn't
+            // be resettable from an edit form).
+            if (req.body.kind === 'update-discount') {
+                const {
+                    id, discountType, value: discountValue,
+                    startDate, endDate, maxUses,
+                    oneRedemptionPerCustomer, minOrderValue,
+                    applicableProductIds, applicableCategories
+                } = req.body;
+
+                if (!id) return res.status(400).json({ error: 'Discount id is required.' });
+                if (!discountType || discountValue === undefined || discountValue === null || discountValue === '') {
+                    return res.status(400).json({ error: 'Type and value are required.' });
+                }
+                if (!['percent', 'fixed', 'shipping'].includes(discountType)) {
+                    return res.status(400).json({ error: 'Type must be percent, fixed, or shipping.' });
+                }
+
+                const discountRef = db.collection('discounts').doc(id);
+                const existingDoc = await discountRef.get();
+                if (!existingDoc.exists) return res.status(404).json({ error: 'Discount code not found.' });
+
+                await discountRef.update({
+                    type: discountType,
+                    value: Number(discountValue) || 0,
+                    startDate: startDate || null,
+                    endDate: endDate || null,
+                    maxUses: (maxUses !== undefined && maxUses !== null && maxUses !== '') ? Number(maxUses) : null,
+                    oneRedemptionPerCustomer: !!oneRedemptionPerCustomer,
+                    minOrderValue: (minOrderValue !== undefined && minOrderValue !== null && minOrderValue !== '') ? Number(minOrderValue) : null,
+                    applicableProductIds: csvToArray(applicableProductIds),
+                    applicableCategories: csvToArray(applicableCategories)
+                });
+
+                return res.status(200).json({ success: true });
+            }
+
+            // --- NEW: Activate/Deactivate a Discount Code ---
+            if (req.body.kind === 'toggle-discount-active') {
+                const { id, isActive } = req.body;
+                if (!id) return res.status(400).json({ error: 'Discount id is required.' });
+                await db.collection('discounts').doc(id).update({ isActive: !!isActive });
+                return res.status(200).json({ success: true });
+            }
+
+            // --- (Replaces generate-store-credit.js) ---
             const { returnPath, value, customerEmail } = req.body;
             if (!value || !customerEmail) {
                 return res.status(400).json({ error: 'Value and customer email are required.' });

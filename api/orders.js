@@ -1,6 +1,8 @@
 // FILE: api/orders.js
 import admin from 'firebase-admin';
 import { db } from './_lib/firebase-admin-helper.js';
+import { createOrderTransaction } from './_lib/order-helper.js';
+import { sendOrderConfirmation } from './_lib/brevo-helper.js';
 
 // --- HELPERS ---
 async function getVerifiedUid(req) {
@@ -13,13 +15,6 @@ async function getVerifiedUid(req) {
     } catch (error) {
         return null;
     }
-}
-
-function generateOrderId() {
-    const now = new Date();
-    const datePart = now.toISOString().slice(2, 10).replace(/-/g, "");
-    const randomPart = Math.random().toString(36).substring(2, 7).toUpperCase();
-    return `ORD-${datePart}-${randomPart}`;
 }
 
 // --- MAIN HANDLER ---
@@ -55,118 +50,30 @@ export default async function handler(req, res) {
     }
 
     // 2. POST: CREATE ORDER (Guest OR Registered)
+    // NOTE (2026-07-22): this used to contain the full stock/discount/credit
+    // transaction logic inline. It's now extracted into
+    // api/_lib/order-helper.js's createOrderTransaction() so the PayPal
+    // capture flow (api/paypal.js) can reuse the exact same, already-tested
+    // logic instead of duplicating it. Behavior here is unchanged -- this
+    // still creates an order with no payment step, same as before (the
+    // "Card" checkout path was left as-is, per explicit instruction, while
+    // PayPal was wired up as a real payment flow separately).
     if (req.method === 'POST') {
         try {
             const { orderPayload } = req.body;
-            if (!orderPayload || !orderPayload.items || orderPayload.items.length === 0) {
-                return res.status(400).json({ error: 'Order payload with items is required.' });
+            const { orderId } = await createOrderTransaction({ orderPayload, uid });
+
+            // Fire the confirmation email, but never let an email problem
+            // fail an order that was already successfully created. Brevo
+            // outages/misconfig should only ever be a logged warning here.
+            try {
+                const orderDoc = await db.collection('orders').doc(orderId).get();
+                if (orderDoc.exists) await sendOrderConfirmation(orderDoc.data());
+            } catch (emailError) {
+                console.error(`Order ${orderId} created OK, but confirmation email failed:`, emailError.message);
             }
 
-            // --- FIX: Fetch Admin Settings for Dynamic Delivery Logic ---
-            const settingsDoc = await db.doc('settings/site_settings').get();
-            const settings = settingsDoc.exists ? settingsDoc.data() : {};
-            
-            // Use Admin settings or fallback to defaults if missing
-            const freeDeliveryThreshold = settings.freeDeliveryThreshold ?? 50.00;
-            const baseDeliveryCharge = settings.baseDeliveryCharge ?? 4.99;
-
-            const newOrderId = generateOrderId();
-            const newOrderRef = db.collection('orders').doc(newOrderId);
-
-            await db.runTransaction(async (transaction) => {
-                // A. READ PHASE
-                const standardItems = orderPayload.items.filter(item => !item.isCustom);
-                const productRefs = standardItems.map(item => db.collection('products').doc(item.productId));
-                const productDocs = productRefs.length > 0 ? await transaction.getAll(...productRefs) : [];
-
-                // Check Store Credit (Only if registered)
-                let creditDoc = null;
-                if (uid && orderPayload.appliedDiscount?.type === 'store_credit' && orderPayload.appliedDiscount.id) {
-                    const creditRef = db.collection('storeCredits').doc(orderPayload.appliedDiscount.id);
-                    creditDoc = await transaction.get(creditRef);
-                    if (!creditDoc.exists) throw new Error('Store credit voucher not found.');
-                }
-
-                // B. VALIDATION PHASE
-                const itemsWithPrice = orderPayload.items.filter(item => item.isCustom); // Start with custom items
-                
-                // Validate Stock for Standard Items
-                productDocs.forEach((doc, index) => {
-                    const requestedItem = standardItems[index];
-                    if (!doc.exists) throw new Error(`Product "${requestedItem.title}" is no longer available.`);
-                    
-                    const productData = doc.data();
-                    if (productData.stock < requestedItem.quantity) {
-                        throw new Error(`Out of stock: ${productData.title} (Only ${productData.stock} left).`);
-                    }
-                    // Ensure price security (use server price, not client price)
-                    itemsWithPrice.push({ ...requestedItem, price: productData.price });
-                });
-
-                // C. CALCULATION PHASE
-                const itemsSubtotal = itemsWithPrice.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-                
-                // --- FIX: Use variables from settings ---
-                const deliveryChargeApplied = itemsSubtotal > 0 && itemsSubtotal < freeDeliveryThreshold ? baseDeliveryCharge : 0;
-                
-                const chargeableTotal = itemsSubtotal + deliveryChargeApplied;
-                
-                let discountApplied = 0;
-
-                // Handle Credit Logic
-                if (creditDoc) {
-                    const creditData = creditDoc.data();
-                    if (creditData.isActive && creditData.remainingValue > 0) {
-                        discountApplied = Math.min(chargeableTotal, creditData.remainingValue);
-                    }
-                } else if (orderPayload.appliedDiscount) {
-                    // Fallback for simple percentage/fixed discounts
-                    const discount = orderPayload.appliedDiscount;
-                    if (discount.type === 'percent') discountApplied = (itemsSubtotal * discount.value) / 100;
-                    else if (discount.type === 'fixed') discountApplied = discount.value;
-                }
-                
-                discountApplied = Math.min(chargeableTotal, discountApplied);
-                const totalAmount = chargeableTotal - discountApplied;
-
-                // D. WRITE PHASE
-                // Decrement Stock
-                productRefs.forEach((ref, i) => {
-                    transaction.update(ref, { stock: admin.firestore.FieldValue.increment(-standardItems[i].quantity) });
-                });
-
-                // Update Credit (if used)
-                if (creditDoc) {
-                    const newRemaining = creditDoc.data().remainingValue - discountApplied;
-                    transaction.update(creditDoc.ref, {
-                        remainingValue: newRemaining,
-                        isActive: newRemaining > 0,
-                        usageHistory: admin.firestore.FieldValue.arrayUnion({
-                            orderId: newOrderId,
-                            amountUsed: discountApplied,
-                            date: new Date()
-                        })
-                    });
-                }
-
-                // Save Order
-                transaction.set(newOrderRef, {
-                    ...orderPayload,
-                    id: newOrderId,
-                    userId: uid || null, // null = Guest
-                    isGuestOrder: !uid,
-                    items: itemsWithPrice,
-                    itemsSubtotal,
-                    deliveryChargeApplied,
-                    discountApplied,
-                    totalAmount,
-                    status: 'Pending',
-                    orderDate: admin.firestore.FieldValue.serverTimestamp()
-                });
-            });
-
-            return res.status(201).json({ success: true, orderId: newOrderId });
-
+            return res.status(201).json({ success: true, orderId });
         } catch (error) {
             console.error('Create Order Error:', error);
             return res.status(500).json({ error: error.message });
