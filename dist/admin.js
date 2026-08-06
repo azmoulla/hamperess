@@ -1598,6 +1598,17 @@ if (orderCardHeader) {
             const statuses = ['Pending', 'Processing', 'Packed', 'Dispatched', 'Shipped', 'Completed', 'Cancelled', 'Partially Cancelled', 'Returned'];
             const isTerminalState = ['Cancelled', 'Returned', 'Completed', 'Partially Cancelled', 'Shipped'].includes(richOrder.status);
             const isCancellable = !isTerminalState && richOrder.status !== 'Dispatched';
+            // Added 2026-08-06: PayPal captures that come back PENDING are
+            // created as paymentStatus 'pending_review' (see order-helper.js)
+            // -- money hasn't actually landed yet. Locking fulfillment here
+            // stops an order from being packed/shipped before that clears;
+            // if it's later declined, rollbackReservedOrder() in the webhook
+            // can restore stock/discount reservations, but it can't undo a
+            // parcel that already went out the door. Uses the same
+            // lock-with-unlock-escape-hatch pattern as terminal states below.
+            const isPaymentPending = richOrder.paymentStatus === 'pending_review';
+            const isLocked = isTerminalState || isPaymentPending;
+            const lockReason = isPaymentPending ? 'payment' : 'terminal';
             
             let replacementBannerHtml = '';
             if (richOrder.isReplacement && richOrder.originalOrderId) {
@@ -1627,11 +1638,12 @@ if (orderCardHeader) {
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Fulfillment Status</label>
                             <div class="flex items-center gap-2">
-                                <select class="order-status-select p-2 border border-gray-300 rounded-md w-full" data-order-id="${orderDocId}" ${isTerminalState ? 'disabled' : ''}>
+                                <select class="order-status-select p-2 border border-gray-300 rounded-md w-full" data-order-id="${orderDocId}" ${isLocked ? 'disabled' : ''}>
                                     ${statuses.map(s => `<option value="${s}" ${richOrder.status === s ? 'selected' : ''}>${s}</option>`).join('')}
                                 </select>
-                                ${isTerminalState ? `<button type="button" class="unlock-status-btn shrink-0 text-gray-400 hover:text-gray-700" data-order-id="${orderDocId}" title="Unlock to manually override this status"><i class="fas fa-pen"></i></button>` : ''}
+                                ${isLocked ? `<button type="button" class="unlock-status-btn shrink-0 text-gray-400 hover:text-gray-700" data-order-id="${orderDocId}" data-lock-reason="${lockReason}" title="${isPaymentPending ? "Payment still under review -- unlock to override" : 'Unlock to manually override this status'}"><i class="fas fa-pen"></i></button>` : ''}
                             </div>
+                            ${isPaymentPending ? `<p class="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md px-2 py-1 mt-2"><i class="fas fa-exclamation-triangle mr-1"></i>PayPal is still reviewing this payment. Fulfillment is locked until it's confirmed to avoid shipping unpaid orders.</p>` : ''}
                             <div id="tracking-form-${orderDocId}" class="mt-2 space-y-2 ${richOrder.status === 'Shipped' ? '' : 'hidden'}">
                                 <select class="tracking-courier w-full p-2 border rounded-md">
                                     <option ${richOrder.courier === 'Royal Mail' ? 'selected' : ''}>Royal Mail</option>
@@ -1754,7 +1766,11 @@ if (returnActionTarget) {
             const unlockStatusTarget = e.target.closest('.unlock-status-btn');
             if (unlockStatusTarget) {
                 const card = unlockStatusTarget.closest('.order-card');
-                showAdminConfirm('This status is locked to prevent accidental changes after shipping/cancellation/completion. Unlock it to manually override? Use with care -- this bypasses the normal returns/cancellation flow.', () => {
+                const isPaymentLock = unlockStatusTarget.dataset.lockReason === 'payment';
+                const confirmMessage = isPaymentLock
+                    ? "This order's payment hasn't cleared yet -- PayPal is still reviewing it. Fulfilling now risks shipping goods before payment is confirmed, which can't be undone if the payment is later declined. Unlock to override anyway?"
+                    : 'This status is locked to prevent accidental changes after shipping/cancellation/completion. Unlock it to manually override? Use with care -- this bypasses the normal returns/cancellation flow.';
+                showAdminConfirm(confirmMessage, () => {
                     if (!card) return;
                     const select = card.querySelector('.order-status-select');
                     if (select) select.disabled = false;
