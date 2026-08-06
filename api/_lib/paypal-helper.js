@@ -116,3 +116,49 @@ export async function capturePayPalOrder(paypalOrderId) {
     }
     return data; // { id, status, purchase_units: [{ payments: { captures: [{ id, status, amount }] } }], ... }
 }
+
+/**
+ * Verifies that a webhook POST actually came from PayPal (not spoofed) using
+ * PayPal's own /v1/notifications/verify-webhook-signature endpoint -- this is
+ * PayPal's documented approach rather than manual crypto verification.
+ * Requires PAYPAL_WEBHOOK_ID (the ID of the webhook subscription created in
+ * the developer dashboard, NOT the client id/secret) to be set.
+ *
+ * @param {Object} headers - the incoming request's headers (lowercase keys, as Node/Vercel provides)
+ * @param {Object} webhookEventBody - the parsed JSON body of the webhook POST
+ * @returns {Promise<boolean>} true only if PayPal confirms the signature is valid
+ */
+export async function verifyWebhookSignature(headers, webhookEventBody) {
+    const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+    if (!webhookId) {
+        console.error('PayPal webhook verification skipped: PAYPAL_WEBHOOK_ID is not configured.');
+        return false;
+    }
+
+    const accessToken = await getAccessToken();
+    const response = await fetch(`${getBaseUrl()}/v1/notifications/verify-webhook-signature`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            auth_algo: headers['paypal-auth-algo'],
+            cert_url: headers['paypal-cert-url'],
+            transmission_id: headers['paypal-transmission-id'],
+            transmission_sig: headers['paypal-transmission-sig'],
+            transmission_time: headers['paypal-transmission-time'],
+            webhook_id: webhookId,
+            webhook_event: webhookEventBody
+        })
+    });
+
+    if (!response.ok) {
+        const errBody = await response.text();
+        console.error('PayPal webhook verification request failed:', response.status, errBody);
+        return false;
+    }
+
+    const data = await response.json();
+    return data.verification_status === 'SUCCESS';
+}

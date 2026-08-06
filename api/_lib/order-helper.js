@@ -141,9 +141,14 @@ export async function calculateOrderTotal({ orderPayload, uid }) {
  * @param {string|null} params.uid - verified Firebase uid, or null for guest
  * @param {string} [params.paymentMethod] - if provided, stamped onto the order (overrides anything in orderPayload)
  * @param {string} [params.transactionId] - if provided, stamped onto the order (overrides anything in orderPayload)
+ * @param {string} [params.paymentStatus] - 'paid' (default) or 'pending_review'. Distinct from the existing
+ *   fulfillment `status` field (Pending/Processing/Shipped/...) -- this tracks whether money has actually
+ *   landed yet. Added 2026-08-02 so a PayPal capture that comes back PENDING (PayPal's own fraud/e-check
+ *   review, not something we control) can still create the order instead of silently failing, while making
+ *   it possible to tell those orders apart until the PayPal webhook confirms the capture completed.
  * @returns {Promise<{orderId: string, totalAmount: number}>}
  */
-export async function createOrderTransaction({ orderPayload, uid, paymentMethod, transactionId }) {
+export async function createOrderTransaction({ orderPayload, uid, paymentMethod, transactionId, paymentStatus }) {
     if (!orderPayload || !orderPayload.items || orderPayload.items.length === 0) {
         throw new Error('Order payload with items is required.');
     }
@@ -300,6 +305,7 @@ export async function createOrderTransaction({ orderPayload, uid, paymentMethod,
             discountApplied,
             totalAmount,
             status: 'Pending',
+            paymentStatus: paymentStatus || 'paid',
             ...(paymentMethod ? { paymentMethod } : {}),
             ...(transactionId ? { transactionId } : {}),
             orderDate: admin.firestore.FieldValue.serverTimestamp()

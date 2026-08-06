@@ -4730,7 +4730,7 @@ function loadPayPalSdk() {
     return paypalSdkPromise;
 }
 
-function showOrderConfirmationPage(orderId, customerFirstName, totalAmount) {
+function showOrderConfirmationPage(orderId, customerFirstName, totalAmount, paymentStatus) {
     if (typeof firebase !== 'undefined' && firebase.analytics && typeof totalAmount === 'number') {
         const source = sessionStorage.getItem('last_order_source') || 'direct';
         firebase.analytics().logEvent('purchase', {
@@ -4739,7 +4739,16 @@ function showOrderConfirmationPage(orderId, customerFirstName, totalAmount) {
         sessionStorage.removeItem('last_order_source');
     }
 
-    pageCheckout.innerHTML = `<div class="order-confirmation"><h2>Thank You, ${customerFirstName}!</h2><p>Your order #${orderId} has been placed successfully.</p><button id="back-to-home-btn" class="btn btn-primary btn-full-width">Continue Shopping</button></div>`;
+    // NEW (2026-08-02): a PayPal capture can come back 'pending_review'
+    // rather than 'paid' -- PayPal is still holding/reviewing the payment,
+    // not something failed. The order already exists at this point either
+    // way, so this is just different wording, not a different flow.
+    const isPending = paymentStatus === 'pending_review';
+    const message = isPending
+        ? `PayPal is reviewing your payment -- this can take a little while. We'll email you as soon as it's confirmed, and your order #${orderId} is already saved.`
+        : `Your order #${orderId} has been placed successfully.`;
+
+    pageCheckout.innerHTML = `<div class="order-confirmation"><h2>Thank You, ${customerFirstName}!</h2><p>${message}</p><button id="back-to-home-btn" class="btn btn-primary btn-full-width">Continue Shopping</button></div>`;
     document.getElementById('back-to-home-btn').addEventListener('click', () => router.navigate('/'));
 
     cart = [];
@@ -4800,7 +4809,7 @@ async function renderPayPalButtonsIfPresent() {
                         paypalOrderId: data.orderID,
                         orderPayload
                     });
-                    showOrderConfirmationPage(result.orderId, (finalAddress.fullName || 'there').split(' ')[0], orderPayload.totalAmount);
+                    showOrderConfirmationPage(result.orderId, (finalAddress.fullName || 'there').split(' ')[0], orderPayload.totalAmount, result.paymentStatus);
                 } catch (error) {
                     console.error('PayPal capture failed:', error);
                     showConfirmationModal(`Order Failed: ${error.message}`);
