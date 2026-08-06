@@ -1162,6 +1162,21 @@ function openProductModal(item = null) {
         listContainer.innerHTML = currentHamperContents.map(item => `<div class="flex justify-between items-center p-2 bg-gray-100 rounded-md"><span>${item.title} (Qty: ${item.quantity})</span><button type="button" class="remove-hamper-item-btn text-red-500 hover:text-red-700" data-product-id="${item.productId}">Remove</button></div>`).join('');
     }
 
+    // Payment status is distinct from the fulfillment `status` field above --
+    // it tracks whether PayPal has actually confirmed the money (added
+    // 2026-08-06 so admins can tell a 'pending_review' PayPal capture apart
+    // from a normal 'Pending' fulfillment order at a glance).
+    function paymentStatusBadge(order) {
+        const paymentStatus = order.paymentStatus || 'paid';
+        const map = {
+            paid: { label: 'Paid', cls: 'status-approved' },
+            pending_review: { label: 'Payment Pending Review', cls: 'status-pending' },
+            failed: { label: 'Payment Failed', cls: 'status-rejected' }
+        };
+        const { label, cls } = map[paymentStatus] || { label: paymentStatus, cls: 'status-pending' };
+        return `<span class="status-badge ${cls}">${label}</span>`;
+    }
+
     // REPLACEMENT for renderResults function
     // REPLACEMENT for renderResults function
     function renderResults(orders) {
@@ -1192,6 +1207,7 @@ function openProductModal(item = null) {
                         </div>
                         <div class="order-card-header-cell">
                             <span class="status-badge status-${statusClass}">${order.status || 'Pending'}</span>
+                            ${paymentStatusBadge(order)}
                         </div>
                         <div class="order-card-header-cell text-right">
                             <p class="font-semibold text-lg">£${(order.totalAmount || 0).toFixed(2)}</p>
@@ -1660,6 +1676,7 @@ if (orderCardHeader) {
                         <h4>Payment & Totals</h4>
                         <ul class="detail-item-list">
                             <li><span>Payment Method:</span> <strong>${richOrder.paymentMethod || 'N/A'}</strong></li>
+                            <li><span>Payment Status:</span> ${paymentStatusBadge(richOrder)}</li>
                             <li><span>Subtotal:</span> <span>£${(richOrder.itemsSubtotal||0).toFixed(2)}</span></li>
                             <li><span>Delivery:</span> <span>£${(richOrder.deliveryChargeApplied||0).toFixed(2)}</span></li>
                             ${richOrder.discountApplied > 0 ? `<li><span>Discount:</span> <span>-£${(richOrder.discountApplied).toFixed(2)}</span></li>` : ''}
