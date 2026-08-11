@@ -75,6 +75,144 @@ export async function sendOrderConfirmation(order) { // Changed to export
     }
 }
 
+// ADDED (2026-08-09): api/admin-orders.js's cancel action previously sent no
+// email at all -- a customer whose self-service cancellation succeeded (or
+// whose order was cancelled by an admin) had no confirmation it had actually
+// happened, unlike shipping updates and order confirmations above. Mirrors
+// their structure/sender exactly. `cancelledItems` is the list of {title,
+// quantity} actually cancelled by this specific call (not the whole order,
+// for a partial cancellation).
+export async function sendCancellationEmail(order, cancelledItems, isFull) {
+    console.log(`[brevo-helper] Preparing to send cancellation email for order ${order.id}...`);
+    const brevoApiKey = process.env.BREVO_API_KEY;
+
+    if (!brevoApiKey) {
+        console.error('[brevo-helper] CRITICAL: BREVO_API_KEY is missing. Email cannot be sent.');
+        return;
+    }
+
+    try {
+        const apiInstance = new Brevo.TransactionalEmailsApi();
+        apiInstance.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, brevoApiKey);
+        const sendSmtpEmail = new Brevo.SendSmtpEmail();
+
+        const itemsHtml = (cancelledItems || []).map(item => `
+            <li style="margin-bottom: 6px;">${item.title}${item.quantity > 1 ? ` (x${item.quantity})` : ''}</li>`).join('');
+
+        sendSmtpEmail.subject = isFull
+            ? `Your Luxury Hampers Order #${order.id} Has Been Cancelled`
+            : `An Item Was Cancelled From Your Luxury Hampers Order #${order.id}`;
+        sendSmtpEmail.sender = { name: SENDER_NAME, email: SENDER_EMAIL };
+        sendSmtpEmail.to = [{ email: order.customerEmail, name: order.customerName }];
+
+        sendSmtpEmail.htmlContent = wrapEmailHtml(`
+            <div style="font-family: sans-serif; padding: 20px; color: #333;">
+                <h2 style="color: #0a0a0a;">${isFull ? 'Your order has been cancelled' : 'An item has been cancelled from your order'}</h2>
+                <p>Hi ${order.customerName},</p>
+                <p>${isFull
+                    ? `Order #${order.id} has been cancelled as requested.`
+                    : `The following item(s) from order #${order.id} have been cancelled. The rest of your order remains unaffected.`}</p>
+                <ul style="list-style: none; padding: 0;">${itemsHtml}</ul>
+                <p>If any payment is owed back to you for this cancellation, our team will process that separately and be in touch if we need anything from you.</p>
+            </div>`);
+
+        console.log(`[brevo-helper] Sending cancellation email to Brevo for ${order.customerEmail}...`);
+        const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
+        console.log(`[brevo-helper] SUCCESS: Brevo API responded with:`, data);
+
+    } catch (error) {
+        console.error('[brevo-helper] FATAL: Failed to send cancellation email via Brevo. Full error:', JSON.stringify(error, null, 2));
+        throw new Error('Failed to send cancellation email via Brevo.');
+    }
+}
+
+// ADDED (2026-08-09): none of the three refund paths (cancellation
+// auto-refund, admin "Process Refund", returns "Refund via PayPal") ever
+// told the customer their refund had actually completed -- the
+// cancellation email above only says a refund "will be processed
+// separately", with no follow-up once it happens. Fired after a real
+// PayPal refund succeeds, from all three call sites, wrapped in try/catch
+// at each call site so a Brevo hiccup never turns an already-successful
+// refund into a failed request.
+export async function sendRefundConfirmationEmail(order, amount) {
+    console.log(`[brevo-helper] Preparing to send refund confirmation for order ${order.id}...`);
+    const brevoApiKey = process.env.BREVO_API_KEY;
+
+    if (!brevoApiKey) {
+        console.error('[brevo-helper] CRITICAL: BREVO_API_KEY is missing. Email cannot be sent.');
+        return;
+    }
+
+    try {
+        const apiInstance = new Brevo.TransactionalEmailsApi();
+        apiInstance.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, brevoApiKey);
+        const sendSmtpEmail = new Brevo.SendSmtpEmail();
+
+        sendSmtpEmail.subject = `Your Refund of £${amount.toFixed(2)} Has Been Processed -- Order #${order.id}`;
+        sendSmtpEmail.sender = { name: SENDER_NAME, email: SENDER_EMAIL };
+        sendSmtpEmail.to = [{ email: order.customerEmail, name: order.customerName }];
+
+        sendSmtpEmail.htmlContent = wrapEmailHtml(`
+            <div style="font-family: sans-serif; padding: 20px; color: #333;">
+                <h2 style="color: #0a0a0a;">Your refund has been processed</h2>
+                <p>Hi ${order.customerName},</p>
+                <p>We've issued a refund of <strong>£${amount.toFixed(2)}</strong> for order #${order.id}.</p>
+                <p>It should appear back on your original payment method within a few business days, depending on your bank or card provider.</p>
+            </div>`);
+
+        console.log(`[brevo-helper] Sending refund confirmation to Brevo for ${order.customerEmail}...`);
+        const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
+        console.log(`[brevo-helper] SUCCESS: Brevo API responded with:`, data);
+
+    } catch (error) {
+        console.error('[brevo-helper] FATAL: Failed to send refund confirmation via Brevo. Full error:', JSON.stringify(error, null, 2));
+        throw new Error('Failed to send refund confirmation email via Brevo.');
+    }
+}
+
+// ADDED (2026-08-10): closes the "Sign up with Google" email gap --
+// social signups (Google/Facebook via _socialLogin() in public/auth.js)
+// never sent any email at all, unlike email/password signups which get a
+// Firebase verification email. A verification email isn't appropriate
+// here (Google/Facebook already verify the address), but customers still
+// got zero confirmation their account was created. Fired once, only for
+// genuinely first-time social sign-ins -- see the `welcomeEmailSent` guard
+// in api/user-profile.js's `type=welcome-email` action.
+export async function sendWelcomeEmail(customerName, customerEmail) {
+    console.log(`[brevo-helper] Preparing to send welcome email to ${customerEmail}...`);
+    const brevoApiKey = process.env.BREVO_API_KEY;
+
+    if (!brevoApiKey) {
+        console.error('[brevo-helper] CRITICAL: BREVO_API_KEY is missing. Email cannot be sent.');
+        return;
+    }
+
+    try {
+        const apiInstance = new Brevo.TransactionalEmailsApi();
+        apiInstance.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, brevoApiKey);
+        const sendSmtpEmail = new Brevo.SendSmtpEmail();
+
+        sendSmtpEmail.subject = `Welcome to Luxury Hampers!`;
+        sendSmtpEmail.sender = { name: SENDER_NAME, email: SENDER_EMAIL };
+        sendSmtpEmail.to = [{ email: customerEmail, name: customerName }];
+
+        sendSmtpEmail.htmlContent = wrapEmailHtml(`
+            <div style="font-family: sans-serif; padding: 20px; color: #333;">
+                <h2 style="color: #0a0a0a;">Welcome, ${customerName}!</h2>
+                <p>Your account is ready to go. We're glad you're here.</p>
+                <p>Browse our collections and let us know if there's ever anything we can help with.</p>
+            </div>`);
+
+        console.log(`[brevo-helper] Sending welcome email to Brevo for ${customerEmail}...`);
+        const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
+        console.log(`[brevo-helper] SUCCESS: Brevo API responded with:`, data);
+
+    } catch (error) {
+        console.error('[brevo-helper] FATAL: Failed to send welcome email via Brevo. Full error:', JSON.stringify(error, null, 2));
+        throw new Error('Failed to send welcome email via Brevo.');
+    }
+}
+
 export async function sendShippingUpdate(order) {
     console.log(`[brevo-helper] Preparing to send shipping update for order ${order.id}...`);
     const brevoApiKey = process.env.BREVO_API_KEY;

@@ -169,7 +169,19 @@ body.hide-header .main-header { transform: translateY(-101%); }
 
 
 /* --- HERO & SECTIONS --- */
-.hero { background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url('assets/images/hero_main_banner.jpg') no-repeat center center/cover; color: var(--text-light); padding: 4rem 1rem; text-align: center; }
+/* CHANGED (2026-08-11): the background image used to be hardcoded directly
+   on .hero via CSS background-image. Now the section has three stacked
+   layers so the banner can be a real admin-configurable image OR an
+   autoplay looping video (a video can't be set as a CSS background --
+   it has to be an actual element): .hero-media (image/video, injected by
+   applyHeroBanner() in app.js), .hero-overlay (the same dark tint the old
+   CSS gradient provided, now a separate element so it works over video
+   too), and .hero-content (the text, raised above both via z-index). */
+.hero { position: relative; overflow: hidden; color: var(--text-light); padding: 4rem 1rem; text-align: center; }
+.hero-media { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+.hero-media img, .hero-media video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hero-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.5); z-index: 1; }
+.hero-content { position: relative; z-index: 2; }
 .hero h1 { color: var(--text-light); font-size: 2.5rem; }
 .section-title { text-align: center; margin-bottom: 2rem; font-size: 2rem; }
 #products-section, #occasions-section { padding: 2rem 1rem; }
@@ -263,6 +275,34 @@ body.product-list-active .search-container {
     aspect-ratio: 1 / 1;
     overflow: hidden;
     max-height: 250px;
+}
+/* ADDED (2026-08-11): the container above is a fixed square box, but the
+   <img class="product-image"> inside it previously had no sizing rule of
+   its own beyond the site-wide `img { max-width: 100%; height: auto; }`
+   reset -- so a non-square product photo wasn't cropped/centered to fill
+   the box, just clipped at the bottom-right by overflow:hidden. This
+   makes every product photo fill and crop to the square uniformly,
+   regardless of its original aspect ratio, so cards line up visually
+   without requiring admins to pre-crop images to a square before upload.
+   REVERTED (2026-08-11) from a brief attempt at `object-fit: contain`:
+   contain kept every card the same physical box size (verified via
+   getBoundingClientRect -- all exactly equal), but on a white card
+   background the letterboxed empty space is invisible, so photos with
+   different source aspect ratios *looked* randomly sized relative to
+   each other even though the boxes weren't. `cover` reads as visually
+   uniform at a glance, at the cost of cropping content near the edges
+   on photos that aren't already close to square (e.g. items sitting low
+   in a hamper crate) -- accepted trade-off, per direct user feedback
+   after seeing both live. Scoped to `.product-image-container` so it
+   also reaches the list-view search cards, which share the same
+   container/img pairing (and, as a side effect, fixes the list-view
+   desktop override below, which was targeting the stale
+   `.product-image-foreground` class instead of the `.product-image`
+   class actually used in the markup). */
+.product-image-container .product-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 .product-image-background {
     position: absolute;
@@ -843,7 +883,7 @@ body.product-list-active .search-container {
     .quick-view-grid { grid-template-columns: 1fr 1fr; }
 }
 .quick-view-grid .product-image-container { height: 100%; position: relative; overflow: hidden; min-height: 300px; }
-.quick-view-grid .product-image { width: 100%; height: 100%; object-fit: cover; }
+.quick-view-grid .product-image { width: 100%; height: 100%; object-fit: cover; } /* REVERTED 2026-08-11 back to cover, matching the main grid card -- see comment above .product-image-container .product-image */
 .quick-view-details { padding: 2rem; display: flex; flex-direction: column; }
 .quick-view-title { font-family: var(--font-family-headings); margin-top: 0; }
 .quick-view-price { font-size: 1.75rem; font-weight: bold; color: var(--cta-color-green); margin: 0.5rem 0 1rem 0; }
@@ -1162,6 +1202,37 @@ body.product-list-active .search-container {
 .opening-hours h3 { margin-top: 0; }
 .opening-hours p { margin: 0.25rem 0; color: var(--secondary-color); }
 .contact-map-panel img { width: 100%; height: 100%; object-fit: cover; border-radius: var(--border-radius); min-height: 300px; }
+/* ADDED (2026-08-11): styling for the live embedded map iframe that replaced the static <img>. */
+.contact-map-panel { min-height: 300px; }
+.contact-map-panel iframe.contact-map-embed { width: 100%; height: 100%; min-height: 300px; border-radius: var(--border-radius); }
+
+/* ADDED (2026-08-11): styling for the checkout Terms & Conditions agreement checkbox. */
+.checkout-terms-agreement { padding-top: 0.5rem; }
+.checkout-terms-agreement .checkbox-label { display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.9rem; cursor: pointer; }
+.checkout-terms-agreement .checkbox-label input[type="checkbox"] { margin-top: 0.2rem; flex-shrink: 0; }
+.checkout-terms-agreement .checkbox-label a { color: var(--primary-color); text-decoration: underline; }
+.checkout-terms-agreement .error-message { margin-left: 1.5rem; }
+
+/* ADDED (2026-08-11): FAQ page styling -- was bare unstyled <details>/<summary>. */
+.faq-intro { color: var(--secondary-color); margin: -0.5rem 0 1.5rem 0; font-size: 0.95rem; }
+.faq-intro a { color: var(--primary-color); font-weight: 600; text-decoration: underline; }
+.faq-list { display: flex; flex-direction: column; gap: 0.85rem; }
+.faq-item { background-color: #fff; border: 1px solid #e5e7eb; border-radius: var(--border-radius); overflow: hidden; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+.faq-item[open] { border-color: var(--primary-color); box-shadow: 0 4px 14px rgba(44, 62, 80, 0.09); }
+.faq-question { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.05rem 1.4rem; font-family: var(--font-family-headings); font-size: 1.02rem; font-weight: 600; color: var(--primary-color); cursor: pointer; list-style: none; transition: background-color 0.2s ease; }
+.faq-question::-webkit-details-marker { display: none; }
+.faq-question:hover { background-color: #f9fafb; }
+.faq-chevron { flex-shrink: 0; font-size: 0.85rem; color: var(--secondary-color); transition: transform 0.25s ease, color 0.25s ease; }
+.faq-item[open] .faq-chevron { transform: rotate(180deg); color: var(--cta-color-green); }
+.faq-answer { margin: 0; padding: 0 1.4rem 1.15rem 1.4rem; padding-top: 0.9rem; border-top: 1px solid #f0f0f0; color: var(--secondary-color); line-height: 1.7; }
+
+/* ADDED (2026-08-11): Delivery Info page styling -- was riding on dead Tailwind classes. */
+.delivery-info-list { display: flex; flex-direction: column; gap: 1.75rem; }
+.delivery-section { display: flex; align-items: flex-start; gap: 1.1rem; padding-bottom: 1.75rem; border-bottom: 1px solid #f0f0f0; }
+.delivery-section:last-child { border-bottom: none; padding-bottom: 0; }
+.delivery-section-icon { flex-shrink: 0; width: 2.75rem; height: 2.75rem; display: flex; align-items: center; justify-content: center; background-color: #eef2f5; border-radius: 50%; color: var(--primary-color); font-size: 1.15rem; }
+.delivery-section-body h3 { font-family: var(--font-family-headings); font-size: 1.15rem; color: var(--primary-color); margin: 0 0 0.4rem 0; }
+.delivery-section-body p { color: var(--secondary-color); line-height: 1.7; white-space: pre-line; margin: 0; }
 
 
 /* --- CREATE YOUR OWN HAMPER STYLES --- */

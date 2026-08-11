@@ -5,7 +5,7 @@ const firebaseConfig = {
   projectId: "luxury-hampers-app",
   storageBucket: "luxury-hampers-app.firebasestorage.app",
   messagingSenderId: "314612428903",
-  appId: "1:314612428903:web:3dca1b32342818124c2",
+  appId: "1:314612428903:web:39c34c1d63e0aa818124c2",
   measurementId: "G-LXPLK738BM"
 };
 const ALGOLIA_APP_ID = '2HPG7X4SK4'; // From your .env file

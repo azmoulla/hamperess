@@ -12,10 +12,15 @@ const DEFAULTS = {
         legalLinks: []
     },
     
-    contact_us: { 
+    contact_us: {
         pageTitle: "Get in Touch",
         pageSubtitle: "We'd love to hear from you!",
-        mapImagePath: "assets/images/map_placeholder.png",
+        // CHANGED (2026-08-11): mapImagePath (static image file) -> mapQuery +
+        // mapZoom (drives a live embedded Google Map instead). See the fix
+        // comments in public/app.js renderContactPage and
+        // public/admin.js renderAdminContactUsPage.
+        mapQuery: "London, UK",
+        mapZoom: 15,
         contactDetails: [],
         openingHours: { title: "Opening Hours", hours: [] }
     },

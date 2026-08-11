@@ -70,7 +70,21 @@ const auth = (() => {
             }
 
             // 3. The remote cart (saved in their profile).
-            const remoteCart = currentUser.cart || [];
+            // FIX (2026-08-11): previously used currentUser.cart unconditionally,
+            // with no expiry check at all -- so a logged-in user's server-saved
+            // cart would get merged back in on every login no matter how old it
+            // was, completely bypassing the admin's Cart Persistence (Days)
+            // setting (which only ever governed the local/guest cart's expiry).
+            // Confirmed live: an explicitly-expired local cart was correctly
+            // cleared by the block above, then immediately repopulated by this
+            // remote merge. Now mirrors the same expiry check used for the
+            // local cart, using cartExpires saved alongside the cart by
+            // saveCart()'s backend sync (see app.js) and api/user-profile.js.
+            const remoteCartExpired = currentUser.cartExpires && new Date().getTime() > currentUser.cartExpires;
+            const remoteCart = (!remoteCartExpired && currentUser.cart) ? currentUser.cart : [];
+            if (remoteCartExpired) {
+                console.log("auth.js: Remote cart is expired, ignoring.");
+            }
             console.log("auth.js: Remote cart:", remoteCart.length, "items");
 
             // 4. Merge the carts: Combine both, giving precedence to remote items if duplicates exist.
@@ -225,6 +239,25 @@ async register(name, email, password) {
                         email: user.email,
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
+
+                    // ADDED (2026-08-10): social sign-ins (Google/Facebook)
+                    // never sent any email at all, unlike email/password
+                    // signups which get a Firebase verification email --
+                    // a verification email isn't needed here (Google/
+                    // Facebook already verify the address) but customers
+                    // still got zero confirmation. Fires a real welcome
+                    // email via the existing Brevo pipeline, only for
+                    // genuinely first-time sign-ins (this branch only runs
+                    // when the Firestore profile doc didn't already
+                    // exist). Server-side also idempotency-guarded via
+                    // `welcomeEmailSent` in api/user-profile.js, so a
+                    // double-call can't send two emails. Wrapped so a
+                    // failure here never blocks a successful login.
+                    try {
+                        await fetchWithAuth('/api/user-profile?type=welcome-email', { method: 'POST' });
+                    } catch (welcomeError) {
+                        console.error('Welcome email request failed:', welcomeError.message);
+                    }
                 }
 
                 return { success: true };

@@ -243,6 +243,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const cancelFullBtn = document.getElementById('cancel-full-btn');
     const cancelModalSpinner = document.getElementById('cancel-modal-spinner');
     const creditModal = document.getElementById('issue-credit-modal');
+    const refundPaypalModal = document.getElementById('refund-paypal-modal');
+    const manualRefundModal = document.getElementById('manual-refund-modal');
     const createOrderForm = document.getElementById('create-order-form');
     const standaloneForm = document.getElementById('create-standalone-voucher-form');
     const discountForm = document.getElementById('create-discount-form'); // NEW: discount codes, separate from standaloneForm above
@@ -864,7 +866,7 @@ function renderVouchersTable(vouchers) {
         return;
     }
 
-    let tableHtml = `<div class="overflow-x-auto"><table class="min-w-full bg-white border"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Value</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Issued To</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Origin</th></tr></thead><tbody class="divide-y divide-gray-200">`;
+    let tableHtml = `<div class="overflow-x-auto"><table class="min-w-full bg-white border"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Value</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Issued To</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Origin</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">History</th></tr></thead><tbody class="divide-y divide-gray-200">`;
 
     vouchers.forEach((v, index) => {
         let currentValDisplay = "ERROR";
@@ -895,6 +897,26 @@ function renderVouchersTable(vouchers) {
             console.error(`💥 CRITICAL ERROR on Voucher ${v.code}:`, err);
         }
 
+        // ADDED (2026-08-09): usageHistory was already being written correctly
+        // (including reversal entries when a cancelled order gives the credit
+        // back -- see api/admin-orders.js's cancel action) but had no way to
+        // view it anywhere in the admin UI -- only visible via a raw Firestore/
+        // API look. Rendered as a hidden detail row, toggled by the button in
+        // the History column, rather than always-visible, to keep the table
+        // scannable when most vouchers have zero or one use.
+        const history = Array.isArray(v.usageHistory) ? v.usageHistory : [];
+        const historyRowId = `voucher-history-${v.id || index}`;
+        const historyRowsHtml = history.length > 0
+            ? history.map(h => {
+                const isReversal = Number(h.amountUsed) < 0;
+                const amountDisplay = `${isReversal ? '+' : '-'}£${Math.abs(Number(h.amountUsed) || 0).toFixed(2)}`;
+                return `<div class="py-1 flex justify-between gap-4">
+                    <span>${formatDate(h.date)} -- Order <span class="font-mono">${h.orderId || 'N/A'}</span>${h.note ? ` <em class="text-gray-500">(${h.note})</em>` : ''}</span>
+                    <span class="${isReversal ? 'text-green-700' : 'text-gray-700'} font-medium whitespace-nowrap">${amountDisplay}</span>
+                </div>`;
+            }).join('')
+            : '<p class="text-gray-500">No usage yet.</p>';
+
         tableHtml += `<tr>
             <td class="px-6 py-4 font-mono text-sm">${v.code || 'MISSING CODE'}</td>
             <td class="px-6 py-4 text-sm">£${currentValDisplay} / £${initialValDisplay}</td>
@@ -902,7 +924,9 @@ function renderVouchersTable(vouchers) {
             <td class="px-6 py-4 text-sm">${formatDate(v.creationDate)}</td>
             <td class="px-6 py-4 text-sm"><span class="status-badge ${statusClass}">${status}</span></td>
             <td class="px-6 py-4 text-sm">${v.createdForReturnId || 'Stand-alone'}</td>
-        </tr>`;
+            <td class="px-6 py-4 text-sm"><button type="button" class="toggle-voucher-history-btn text-blue-600 hover:text-blue-900" data-target="${historyRowId}">View (${history.length})</button></td>
+        </tr>
+        <tr id="${historyRowId}" class="hidden voucher-history-row"><td colspan="7" class="px-6 py-3 bg-gray-50 text-xs text-gray-700">${historyRowsHtml}</td></tr>`;
     });
 
     tableHtml += `</tbody></table></div>`;
@@ -1099,10 +1123,8 @@ function openProductModal(item = null) {
             document.getElementById('product-category-input').value = item.category || '';
             
             // Populate Tags
-            document.getElementById('product-tag').value = item.tag || ''; 
-            document.getElementById('product-dietary-tags').value = (item.dietaryTags || []).join(', ');
-            document.getElementById('product-occasion-tags').value = (item.occasionTags || []).join(', ');
-            document.getElementById('product-contents-tags').value = (item.contentsTags || []).join(', ');
+            document.getElementById('product-tag').value = item.tag || '';
+            renderDynamicProductTags(item);
 
             // Populate Descriptions
             let bulletsValue = '';
@@ -1132,6 +1154,7 @@ function openProductModal(item = null) {
         // Create Mode
         document.getElementById('product-modal-title').textContent = isComponentMode ? 'Create New Component' : 'Create New Product';
         if (!isComponentMode) document.getElementById('product-active-toggle').checked = true;
+        if (!isComponentMode) renderDynamicProductTags(null);
     }
 
     // 5. Render Dynamic Sections
@@ -1175,6 +1198,26 @@ function openProductModal(item = null) {
         };
         const { label, cls } = map[paymentStatus] || { label: paymentStatus, cls: 'status-pending' };
         return `<span class="status-badge ${cls}">${label}</span>`;
+    }
+
+    // ADDED (2026-08-10): distinguishes POS-created orders from real
+    // customer/PayPal checkout orders at a glance -- previously the only
+    // way to tell was indirect inference (userId null-ness, item schema
+    // shape, presence of a paymentMethod field), none of which was fully
+    // reliable on its own (a guest checkout also has userId: null, same
+    // as POS). Reads the explicit `orderSource` field now stamped by both
+    // order-creation paths (api/admin-orders.js 'pos', api/_lib/order-helper.js
+    // 'online'). Orders created before this field existed have neither
+    // value -- shown as "Unknown (legacy)" rather than silently guessing,
+    // since a wrong guess here is worse than an honest "don't know".
+    function orderSourceBadge(order) {
+        const map = {
+            pos: { label: 'POS', cls: 'status-pending' },
+            online: { label: 'Online', cls: 'status-approved' }
+        };
+        const entry = map[order.orderSource];
+        if (!entry) return `<span class="status-badge" style="background:#e5e7eb;color:#374151;">Unknown (legacy)</span>`;
+        return `<span class="status-badge ${entry.cls}">${entry.label}</span>`;
     }
 
     // REPLACEMENT for renderResults function
@@ -1286,7 +1329,18 @@ async function populateMenuEditor() {
                 if (ret.desiredOutcome === 'Replacement') {
                     actionButtons = `<button class="create-replacement-btn text-purple-600 hover:text-purple-900 text-sm font-medium mr-2" data-return-id="${ret.id}" data-return-path="${ret.returnPath}" data-value="${ret.refundAmount}" data-customer-name="${ret.customerName}" data-customer-email="${ret.customerEmail}">Create Replacement</button><button class="return-action-btn text-red-600 hover:text-red-900 text-sm font-medium" ${actionButtonData} data-action="Rejected">Reject</button>`;
                 } else {
-                    actionButtons = `<button class="return-action-btn text-green-600 hover:text-green-900 text-sm font-medium mr-2" ${actionButtonData} data-action="Approved">Approve</button><button class="issue-credit-btn text-blue-600 hover:text-blue-900 text-sm font-medium mr-2" data-return-id="${ret.id}" data-return-path="${ret.returnPath}" data-value="${ret.refundAmount}" data-customer-email="${ret.customerEmail}">Issue Credit</button><button class="return-action-btn text-red-600 hover:text-red-900 text-sm font-medium" ${actionButtonData} data-action="Rejected">Reject</button>`;
+                    // ADDED (2026-08-09): "Refund via PayPal" sits alongside
+                    // Issue Credit -- real money back to the original payment
+                    // method instead of a store-credit voucher. Only shown
+                    // when the original order was actually paid through
+                    // PayPal (orderPaymentMethod, added server-side in
+                    // api/returns.js's admin listing) -- POS/"Card" orders
+                    // have no gateway to call, so those returns only ever
+                    // get Issue Credit, same as before this change.
+                    const refundPaypalBtn = ret.orderPaymentMethod === 'PayPal'
+                        ? `<button class="refund-paypal-btn text-indigo-600 hover:text-indigo-900 text-sm font-medium mr-2" data-return-id="${ret.id}" data-return-path="${ret.returnPath}" data-value="${ret.refundAmount}" data-customer-email="${ret.customerEmail}">Refund via PayPal</button>`
+                        : '';
+                    actionButtons = `<button class="return-action-btn text-green-600 hover:text-green-900 text-sm font-medium mr-2" ${actionButtonData} data-action="Approved">Approve</button><button class="issue-credit-btn text-blue-600 hover:text-blue-900 text-sm font-medium mr-2" data-return-id="${ret.id}" data-return-path="${ret.returnPath}" data-value="${ret.refundAmount}" data-customer-email="${ret.customerEmail}">Issue Credit</button>${refundPaypalBtn}<button class="return-action-btn text-red-600 hover:text-red-900 text-sm font-medium" ${actionButtonData} data-action="Rejected">Reject</button>`;
                 }
             }
             tableHtml += `<tr id="return-row-${ret.docId}"><td class="px-6 py-4"><div class="font-medium text-gray-900">${ret.id}</div><div class="text-xs text-gray-500">Order: ${ret.orderId}</div></td><td class="px-6 py-4">${ret.customerName}<br><span class="text-xs text-gray-500">${ret.customerEmail}</span></td><td class="px-6 py-4"><div>Requested: ${formatDate(ret.requestDate)}</div></td><td class="px-6 py-4 font-semibold">£${(ret.refundAmount || 0).toFixed(2)}</td><td class="px-6 py-4">${ret.desiredOutcome || 'N/A'}</td><td class="px-6 py-4"><span class="status-badge status-${(ret.status || '').toLowerCase().replace(/\s/g, '-')}">${ret.status}</span></td><td class="px-6 py-4">${actionButtons}</td></tr>`;
@@ -1344,14 +1398,34 @@ async function populateMenuEditor() {
         if (currentOrderForCancellation && cancelModal) {
             cancelModalTitle.textContent = `Cancel Order #${currentOrderForCancellation.id}`;
             const modalPrompt = cancelModalBody.querySelector('p');
-            if (currentOrderForCancellation.items.length === 1) {
-                modalPrompt.textContent = 'This order only contains one item.';
-                cancellationForm.innerHTML = '';
+            // FIX (2026-08-10): this modal used to list every item at its
+            // full original quantity regardless of prior partial
+            // cancellations -- misleading (an already-fully-cancelled item
+            // still showed as checkable at its full qty), and meant
+            // "Cancel Entire Order" was the only reliable way to finish
+            // off a Partially Cancelled order's remaining items, since
+            // per-item selection didn't reflect what was actually left.
+            // Mirrors the fix already applied to the customer-facing
+            // activateCancellationMode() in public/app.js: only items
+            // with remaining (uncancelled) quantity are selectable, at
+            // their remaining quantity, and fully-cancelled items show as
+            // disabled for context instead of disappearing silently.
+            const cancellableItems = currentOrderForCancellation.items.filter(item => (item.quantity - (item.cancelledQuantity || 0)) > 0);
+            const alreadyCancelledItems = currentOrderForCancellation.items.filter(item => (item.quantity - (item.cancelledQuantity || 0)) <= 0);
+
+            if (cancellableItems.length === 1) {
+                modalPrompt.textContent = 'This order only has one item left to cancel.';
+                cancellationForm.innerHTML = alreadyCancelledItems.map(item => `<div class="flex items-center mb-2 opacity-50"><input type="checkbox" checked disabled class="h-4 w-4"><label class="ml-2">${item.title} (Already Cancelled)</label></div>`).join('');
                 cancelSelectedBtn.style.display = 'none';
                 cancelFullBtn.style.display = 'inline-block';
             } else {
                 modalPrompt.textContent = 'Select items for a partial cancellation.';
-                cancellationForm.innerHTML = currentOrderForCancellation.items.map(item => `<div class="flex items-center mb-2"><input id="item-${item.productId}" type="checkbox" value="${item.productId}" data-quantity="${item.quantity}" class="h-4 w-4"><label for="item-${item.productId}" class="ml-2">${item.title} (Qty: ${item.quantity})</label></div>`).join('');
+                const remainingHtml = cancellableItems.map(item => {
+                    const remaining = item.quantity - (item.cancelledQuantity || 0);
+                    return `<div class="flex items-center mb-2"><input id="item-${item.productId}" type="checkbox" value="${item.productId}" data-quantity="${remaining}" class="h-4 w-4"><label for="item-${item.productId}" class="ml-2">${item.title} (Qty: ${remaining})</label></div>`;
+                }).join('');
+                const cancelledHtml = alreadyCancelledItems.map(item => `<div class="flex items-center mb-2 opacity-50"><input type="checkbox" checked disabled class="h-4 w-4"><label class="ml-2">${item.title} (Already Cancelled)</label></div>`).join('');
+                cancellationForm.innerHTML = remainingHtml + cancelledHtml;
                 cancelSelectedBtn.style.display = 'inline-block';
                 cancelFullBtn.style.display = 'inline-block';
                 validateCancellationButtons();
@@ -1374,35 +1448,26 @@ async function performCancellation(payload) {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Cancellation failed.');
 
-        // --- THIS IS THE FIX ---
-        // Instead of looking for a table row, we now find the correct order card.
-        const card = document.querySelector(`.order-card[data-doc-id="${payload.orderId}"]`);
-        if (card) {
-            const newStatus = (payload.itemsToCancel && payload.itemsToCancel.length > 0) ? 'Partially Cancelled' : 'Cancelled';
-            const newStatusClass = newStatus.toLowerCase().replace(/\s/g, '-');
-            
-            // 1. Update the status badge in the card's header
-            const headerBadge = card.querySelector('.order-card-header .status-badge');
-            if (headerBadge) {
-                headerBadge.textContent = newStatus;
-                headerBadge.className = `status-badge status-${newStatusClass}`;
-            }
+        // FIX (2026-08-10): the old approach hand-patched 3 specific DOM
+        // nodes (status badge, status select, remove cancel button) and
+        // left everything else on the card stale -- confirmed live, a
+        // real cancellation correctly fired a PayPal refund server-side,
+        // but the "Payment Refunds" section, Order Contents' "(N
+        // cancelled)" indicators, and the refundOwed/Process Refund
+        // button all kept showing pre-cancellation data until the admin
+        // manually re-searched. Also, unconditionally removing the
+        // cancel button was already wrong as of the "finish cancelling a
+        // Partially Cancelled order" fix above -- a partial cancellation
+        // that still leaves cancellable items should keep the button.
+        // Fixed by matching the exact pattern the "Process Refund" button
+        // already uses for this same staleness problem: invalidate the
+        // card's loaded-details cache and replay the current search, so
+        // the whole card re-renders from fresh server data instead of a
+        // hand-maintained partial patch.
+        const details = document.querySelector(`.order-card[data-doc-id="${payload.orderId}"] .order-card-details`);
+        if (details) details.dataset.loaded = '';
+        document.getElementById('search-form')?.dispatchEvent(new Event('submit'));
 
-            // 2. If the details are loaded, update the controls inside as well
-            const details = card.querySelector('.order-card-details');
-            if (details && details.dataset.loaded) {
-                const statusSelect = details.querySelector('.order-status-select');
-                if (statusSelect) {
-                    statusSelect.value = newStatus;
-                    statusSelect.disabled = true;
-                }
-                const cancelButton = details.querySelector('.cancel-order-btn');
-                if (cancelButton) {
-                    cancelButton.remove(); // Remove the button as it's no longer cancellable
-                }
-            }
-        }
-        
         showAdminNotification('Order updated successfully!');
         if (cancelModal) cancelModal.classList.add('hidden');
     } catch (error) {
@@ -1498,16 +1563,18 @@ async function performCancellation(payload) {
                 payload = { title: document.getElementById('product-title-input').value, description: descriptionBullets, professionalDescription: document.getElementById('product-description-input').value, price: parseFloat(document.getElementById('product-price-input').value), variants: currentProductVariants, salePrice: parseFloat(document.getElementById('product-saleprice-input').value) || null, rating: parseFloat(document.getElementById('product-rating-input').value) || null, reviewCount: parseInt(document.getElementById('product-reviewcount-input').value, 10) || 0, stock: parseInt(document.getElementById('product-stock-input').value, 10), category: document.getElementById('product-category-input').value, tag: '', imageUrls: document.getElementById('product-images-input').value.split(',').map(url => url.trim()).filter(Boolean), isActive: document.getElementById('product-active-toggle').checked, isHamper: isHamper };
                 if (isHamper) payload.hamperContents = currentHamperContents.map(({ productId, quantity }) => ({ productId, quantity }));
             }
-           // --- NEW TAG PARSING LOGIC (Comma Separated) ---
-                const parseTags = (val) => val ? val.split(',').map(t => t.trim()).filter(t => t !== '') : [];
+           // --- TAG READING LOGIC (checkboxes sourced from Search Tags, see renderDynamicProductTags) ---
+                const checkedTags = (category) => Array.from(document.querySelectorAll(`input[name="product-tag-${category}"]:checked`)).map(cb => cb.value);
 
                 // Overwrite the 'tag' field from the payload because the ID changed in HTML
                 payload.tag = document.getElementById('product-tag').value;
 
-                // Add the 3 new arrays
-                payload.dietaryTags = parseTags(document.getElementById('product-dietary-tags').value);
-                payload.occasionTags = parseTags(document.getElementById('product-occasion-tags').value);
-                payload.contentsTags = parseTags(document.getElementById('product-contents-tags').value);
+                // Add the 3 new arrays -- values are constrained to whatever's configured
+                // in Search Tags (admin), so a product can no longer be tagged with a value
+                // that doesn't match any chip (see project_chip_filter_system memory).
+                payload.dietaryTags = checkedTags('dietary');
+                payload.occasionTags = checkedTags('occasion');
+                payload.contentsTags = checkedTags('contents');
                 // -----------------------------------------------
                 // -------------------------------------
             try {
@@ -1602,7 +1669,19 @@ if (orderCardHeader) {
             // --- All your logic below is correct ---
             const statuses = ['Pending', 'Processing', 'Packed', 'Dispatched', 'Shipped', 'Completed', 'Cancelled', 'Partially Cancelled', 'Returned'];
             const isTerminalState = ['Cancelled', 'Returned', 'Completed', 'Partially Cancelled', 'Shipped'].includes(richOrder.status);
-            const isCancellable = !isTerminalState && richOrder.status !== 'Dispatched';
+            // FIX (2026-08-10): "Partially Cancelled" is (correctly) a
+            // terminal state for the raw Fulfillment Status dropdown --
+            // but that also blanket-hid the "Request Cancellation" button
+            // for an order that still has items left to cancel, with no
+            // way back in to finish the job (the unlock-icon escape hatch
+            // only re-enables the dropdown, not this button). Confirmed
+            // live: a real order with 1 of 2 items already cancelled had
+            // no cancellation control visible at all. Now allowed whenever
+            // there's at least one item with quantity remaining, even if
+            // the order is already Partially Cancelled.
+            const hasRemainingCancellableItems = (richOrder.items || []).some(item => (item.quantity - (item.cancelledQuantity || 0)) > 0);
+            const isCancellable = (!isTerminalState && richOrder.status !== 'Dispatched')
+                || (richOrder.status === 'Partially Cancelled' && hasRemainingCancellableItems);
             // Added 2026-08-06: PayPal captures that come back PENDING are
             // created as paymentStatus 'pending_review' (see order-helper.js)
             // -- money hasn't actually landed yet. Locking fulfillment here
@@ -1675,11 +1754,47 @@ if (orderCardHeader) {
             const addressHtml = `<p class="font-semibold">${address.fullName||'N/A'}</p><p>${address.addressLine1||''}</p>${address.addressLine2 ? `<p>${address.addressLine2}</p>`:''}<p>${address.city||''}, ${address.postcode||''}</p><p>${address.country||''}</p>`;
             const itemsHtml = richOrder.items.map(item => {
                 const returnedInfo = item.quantityReturned > 0 ? `<span class="returned-item-indicator">(Returned: ${item.quantityReturned})</span>` : '';
-                return `<li><span>${item.title} (x${item.quantity}) ${returnedInfo}</span> <span>£${(item.price * item.quantity).toFixed(2)}</span></li>`;
+                // ADDED (2026-08-10): mirrors the "(Y cancelled)" indicator
+                // already shown on the customer-facing order detail page --
+                // the admin's own Order Contents view had no way to see
+                // partial cancellations at a glance, which made this whole
+                // gap (can't tell what's left to cancel) harder to spot.
+                const cancelledInfo = item.cancelledQuantity > 0 ? `<span style="color:#b91c1c;">(${item.cancelledQuantity} cancelled)</span>` : '';
+                return `<li><span>${item.title} (x${item.quantity}) ${returnedInfo} ${cancelledInfo}</span> <span>£${(item.price * item.quantity).toFixed(2)}</span></li>`;
             }).join('');
             const associatedReturns = richOrder.associatedReturns || [];
             const totalRefunded = associatedReturns.filter(r=>r.status.includes('Completed')||r.status==='Approved').reduce((sum,r)=>sum + (r.refundAmount||0),0);
             const refundHtml = associatedReturns.length > 0 ? associatedReturns.map(r=>`<li>Return #${r.id} (${r.status}) <span>£${(r.refundAmount||0).toFixed(2)}</span></li>`).join('') : '<li>None</li>';
+
+            // ADDED (2026-08-09): real PayPal refunds fired from cancellations
+            // (order.refunds, order.refundOwed -- see api/admin-orders.js's
+            // cancel + process-refund actions). Separate from the
+            // return-driven "Associated Refunds" list above, which is about
+            // the store's own `refundAmount` estimate on a return request,
+            // not a confirmed payment-gateway transaction.
+            const orderRefunds = richOrder.refunds || [];
+            const paymentRefundsHtml = orderRefunds.length > 0
+                ? orderRefunds.map(r => {
+                    const statusLabel = { completed: 'Refunded', failed: 'FAILED', pending_admin_review: 'Pending review' }[r.status] || r.status;
+                    const statusClass = r.status === 'completed' ? 'text-green-700' : (r.status === 'failed' ? 'text-red-600 font-bold' : 'text-yellow-700');
+                    const manualNote = r.triggeredBy === 'admin_manual_external' ? ' <span class="text-gray-400">(manual)</span>' : '';
+                    return `<li><span class="${statusClass}">${statusLabel}</span>${manualNote} <span>£${(r.amount||0).toFixed(2)}</span></li>`;
+                }).join('')
+                : '<li>None</li>';
+            const refundOwed = richOrder.refundOwed || 0;
+            const processRefundHtml = refundOwed > 0
+                ? `<button type="button" class="process-refund-btn text-white bg-blue-600 hover:bg-blue-700 text-xs font-medium px-3 py-2 rounded-md mt-2" data-order-id="${orderDocId}" data-amount="${refundOwed.toFixed(2)}">Process Refund (£${refundOwed.toFixed(2)})</button>`
+                : '';
+            // ADDED (2026-08-11): PayPal orders refund through the button
+            // above (real API call). Everything else (POS/External Card
+            // Reader, Bank Transfer, legacy no-payment "Card" checkout) has
+            // no gateway to call -- this just logs a refund the admin
+            // already issued elsewhere (card terminal, bank transfer) so
+            // it's visible here instead of untracked. See api/admin-orders.js's
+            // 'mark-manual-refund' action.
+            const manualRefundHtml = richOrder.paymentMethod && richOrder.paymentMethod !== 'PayPal'
+                ? `<button type="button" class="manual-refund-btn text-white bg-gray-600 hover:bg-gray-700 text-xs font-medium px-3 py-2 rounded-md mt-2 ml-2" data-order-id="${orderDocId}" data-friendly-id="${richOrder.id}" data-customer-email="${richOrder.customerEmail || ''}">Mark as Manually Refunded</button>`
+                : '';
 
             details.innerHTML = `
               ${replacementBannerHtml} 
@@ -1692,7 +1807,9 @@ if (orderCardHeader) {
                     <div class="detail-section">
                         <h4>Payment & Totals</h4>
                         <ul class="detail-item-list">
+                            <li><span>Order Source:</span> ${orderSourceBadge(richOrder)}</li>
                             <li><span>Payment Method:</span> <strong>${richOrder.paymentMethod || 'N/A'}</strong></li>
+                            ${richOrder.transactionId ? `<li><span>Transaction ID:</span> <span class="text-xs font-mono">${richOrder.transactionId}</span></li>` : ''}
                             <li><span>Payment Status:</span> ${paymentStatusBadge(richOrder)}</li>
                             <li><span>Subtotal:</span> <span>£${(richOrder.itemsSubtotal||0).toFixed(2)}</span></li>
                             <li><span>Delivery:</span> <span>£${(richOrder.deliveryChargeApplied||0).toFixed(2)}</span></li>
@@ -1708,6 +1825,12 @@ if (orderCardHeader) {
                     <div class="detail-section">
                         <h4>Associated Refunds</h4>
                         <ul class="detail-item-list">${refundHtml}</ul>
+                    </div>
+                    <div class="detail-section">
+                        <h4>Payment Refunds</h4>
+                        <ul class="detail-item-list">${paymentRefundsHtml}</ul>
+                        ${refundOwed > 0 ? `<p class="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md px-2 py-1 mt-2"><i class="fas fa-exclamation-triangle mr-1"></i>Customer cancelled an item themselves -- £${refundOwed.toFixed(2)} is owed back via PayPal.</p>` : ''}
+                        ${processRefundHtml}${manualRefundHtml}
                     </div>
                     ${replacementsIssuedHtml}
                 </div>
@@ -1738,13 +1861,21 @@ if (returnActionTarget) {
 
         try {
             const token = await fbAuth.currentUser.getIdToken();
-            await fetch('/api/returns?action=updateStatus', { 
-                method: 'PUT', 
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, 
+            // FIX (2026-08-08): this never checked response.ok, so a real
+            // server error (e.g. the transaction-ordering bug that made every
+            // 'Approve' click fail with a 500) was silently swallowed and the
+            // UI reported success anyway. Found via e2e return testing --
+            // Approve looked like it worked but the return's status never
+            // actually changed in Firestore.
+            const response = await fetch('/api/returns?action=updateStatus', {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 // --- THE FIX: Send the correct docId to the API ---
-                body: JSON.stringify({ returnId: returnDocId, newStatus: action, orderId, userId }) 
+                body: JSON.stringify({ returnId: returnDocId, newStatus: action, orderId, userId })
             });
-            
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || `HTTP error ${response.status}`);
+
             showAdminNotification('Return status updated successfully!');
             
             // --- THE FIX: Reliably refresh the table view ---
@@ -1762,6 +1893,55 @@ if (returnActionTarget) {
 
             const cancelOrderTarget = e.target.closest('.cancel-order-btn');
             if (cancelOrderTarget) { openCancellationModal(cancelOrderTarget.dataset.orderId); return; }
+
+            // ADDED (2026-08-09): fires the PayPal refund queued when a
+            // customer cancelled an item/order themselves (see the
+            // "Payment Refunds" section above and api/admin-orders.js's
+            // 'process-refund' action). Confirms the exact amount before
+            // sending -- same "admin reviews the number before it fires"
+            // pattern as Issue Credit, since this is real money leaving the
+            // account, not just a store-credit/bookkeeping adjustment.
+            const processRefundTarget = e.target.closest('.process-refund-btn');
+            if (processRefundTarget) {
+                const { orderId, amount } = processRefundTarget.dataset;
+                showAdminConfirm(`Refund £${amount} to the customer via PayPal? This cannot be undone.`, async () => {
+                    processRefundTarget.disabled = true;
+                    processRefundTarget.textContent = 'Processing...';
+                    try {
+                        const token = await fbAuth.currentUser.getIdToken();
+                        const response = await fetch('/api/admin-orders?action=process-refund', {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ orderId, amount: parseFloat(amount) })
+                        });
+                        const result = await response.json();
+                        if (!response.ok) throw new Error(result.error || 'Refund failed.');
+                        showAdminNotification(result.message || 'Refund processed.');
+                        const details = processRefundTarget.closest('.order-card-details');
+                        if (details) details.dataset.loaded = '';
+                        searchForm.dispatchEvent(new Event('submit'));
+                    } catch (error) {
+                        showAdminNotification(`Error: ${error.message}`, true);
+                        processRefundTarget.disabled = false;
+                        processRefundTarget.textContent = `Process Refund (£${amount})`;
+                    }
+                });
+                return;
+            }
+            // ADDED (2026-08-11): opens the "Mark as Manually Refunded"
+            // modal for non-PayPal orders -- see manualRefundHtml above
+            // and the manualRefundModal wiring below.
+            const manualRefundTarget = e.target.closest('.manual-refund-btn');
+            if (manualRefundTarget) {
+                const { orderId, friendlyId, customerEmail } = manualRefundTarget.dataset;
+                document.getElementById('manual-refund-order-id').textContent = friendlyId || orderId;
+                document.getElementById('manual-refund-customer-email').textContent = customerEmail || 'N/A';
+                document.getElementById('manual-refund-value-input').value = '';
+                document.getElementById('manual-refund-reference-input').value = '';
+                document.getElementById('manual-refund-hidden-order-id').value = orderId;
+                if (manualRefundModal) manualRefundModal.classList.remove('hidden');
+                return;
+            }
             // NEW: escape hatch for locked statuses. The dropdown is disabled
             // once an order reaches a terminal state (Shipped, Completed,
             // Cancelled, Returned, Partially Cancelled) so it can't be
@@ -1792,6 +1972,8 @@ if (returnActionTarget) {
             if (saveTrackingTarget) { const orderId = saveTrackingTarget.dataset.orderId; const card = saveTrackingTarget.closest('.order-card'); if (card) { const courier = card.querySelector('.tracking-courier').value; const trackingNumber = card.querySelector('.tracking-number').value; if (trackingNumber) { const saved = await updateOrderStatus(orderId, { newStatus: 'Shipped', trackingNumber, courier }); if (saved) { card.querySelector(`#tracking-form-${orderId}`).classList.add('hidden'); } } else { showAdminNotification('Please enter a tracking number.', true); } } return; }
             const issueCreditTarget = e.target.closest('.issue-credit-btn');
             if (issueCreditTarget) { const { returnId, returnPath, value, customerEmail } = issueCreditTarget.dataset; document.getElementById('modal-return-id').textContent = returnId; document.getElementById('modal-customer-email').textContent = customerEmail; document.getElementById('credit-value-input').value = parseFloat(value).toFixed(2); document.getElementById('modal-hidden-return-path').value = returnPath; document.getElementById('modal-hidden-customer-email').value = customerEmail; if (creditModal) creditModal.classList.remove('hidden'); return; }
+            const refundPaypalTarget = e.target.closest('.refund-paypal-btn');
+            if (refundPaypalTarget) { const { returnId, returnPath, value, customerEmail } = refundPaypalTarget.dataset; document.getElementById('paypal-refund-return-id').textContent = returnId; document.getElementById('paypal-refund-customer-email').textContent = customerEmail; document.getElementById('paypal-refund-value-input').value = parseFloat(value).toFixed(2); document.getElementById('paypal-refund-hidden-return-path').value = returnPath; if (refundPaypalModal) refundPaypalModal.classList.remove('hidden'); return; }
             const createReplacementTarget = e.target.closest('.create-replacement-btn');
 if (createReplacementTarget) {
     const { returnId, returnPath, customerName, customerEmail, value } = createReplacementTarget.dataset;
@@ -1969,10 +2151,25 @@ if (createReplacementTarget) {
     });
 }
     
-    if (applyDiscountBtn) { applyDiscountBtn.addEventListener('click', async () => { const codeInput = document.getElementById('pos-discount-input'); const messageEl = document.getElementById('pos-discount-message'); const code = codeInput.value.trim(); if (!code) { posAppliedDiscount = null; if (messageEl) messageEl.textContent = ''; updateOrderSummary(); return; } try { const response = await fetch(`/api/vouchers?code=${code}`); const result = await response.json(); if (!response.ok) throw new Error(result.error); posAppliedDiscount = result; if (messageEl) { messageEl.textContent = `Success: "${result.description}" applied!`; messageEl.style.color = 'green'; } } catch (error) { posAppliedDiscount = null; if (messageEl) { messageEl.textContent = `Error: ${error.message}`; messageEl.style.color = 'red'; } } updateOrderSummary(); }); }
+    if (applyDiscountBtn) { applyDiscountBtn.addEventListener('click', async () => { const codeInput = document.getElementById('pos-discount-input'); const messageEl = document.getElementById('pos-discount-message'); const code = codeInput.value.trim(); if (!code) { posAppliedDiscount = null; if (messageEl) messageEl.textContent = ''; updateOrderSummary(); return; } try { const response = await fetch(`/api/vouchers?code=${code}`); const result = await response.json(); if (!response.ok) throw new Error(result.error); posAppliedDiscount = result; if (messageEl) { messageEl.textContent = `Success: "${result.description || result.code || code}" applied!`; messageEl.style.color = 'green'; } } catch (error) { posAppliedDiscount = null; if (messageEl) { messageEl.textContent = `Error: ${error.message}`; messageEl.style.color = 'red'; } } updateOrderSummary(); }); }
 
     if (creditModal) { creditModal.addEventListener('click', async (e) => { const generateBtn = e.target.closest('#modal-generate-btn'); const cancelBtn = e.target.closest('#modal-cancel-btn'); if (cancelBtn) creditModal.classList.add('hidden'); if (generateBtn) { const returnPath = document.getElementById('modal-hidden-return-path').value; const customerEmail = document.getElementById('modal-hidden-customer-email').value; const value = document.getElementById('credit-value-input').value; if (!returnPath || !value || !customerEmail) return showAdminNotification('Data is missing. Please close and retry.', true); const spinner = document.getElementById('credit-modal-spinner'); if (spinner) spinner.classList.remove('hidden'); if (generateBtn) generateBtn.disabled = true; try { const token = await fbAuth.currentUser.getIdToken(); const response = await fetch('/api/vouchers', { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ returnPath, value, customerEmail }) });
             const result = await response.json(); if (!response.ok) throw new Error(result.error || result.details || 'API error'); creditModal.classList.add('hidden'); showAdminNotification(`Success! Send this code to the customer: ${result.code}`); await fetchAllReturns(); if (searchForm) searchForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); } catch (error) { showAdminNotification(`Error: ${error.message}`, true); } finally { if (spinner) spinner.classList.add('hidden'); if (generateBtn) generateBtn.disabled = false; } } }); }
+    // ADDED (2026-08-09): "Refund via PayPal" modal -- mirrors the
+    // issue-credit-modal wiring above exactly (editable amount, spinner,
+    // disable-while-in-flight), just posts `kind: 'refund-paypal'` instead.
+    // Kept as its own modal rather than overloading the credit one, since
+    // this is real money leaving the account and shouldn't share code paths
+    // that were built/tested for a store-credit voucher.
+    if (refundPaypalModal) { refundPaypalModal.addEventListener('click', async (e) => { const confirmBtn = e.target.closest('#paypal-refund-modal-confirm-btn'); const cancelBtn = e.target.closest('#paypal-refund-modal-cancel-btn'); if (cancelBtn) refundPaypalModal.classList.add('hidden'); if (confirmBtn) { const returnPath = document.getElementById('paypal-refund-hidden-return-path').value; const amount = document.getElementById('paypal-refund-value-input').value; if (!returnPath || !amount) return showAdminNotification('Data is missing. Please close and retry.', true); const spinner = document.getElementById('paypal-refund-modal-spinner'); if (spinner) spinner.classList.remove('hidden'); confirmBtn.disabled = true; try { const token = await fbAuth.currentUser.getIdToken(); const response = await fetch('/api/vouchers', { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'refund-paypal', returnPath, amount: parseFloat(amount) }) });
+            const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Refund failed'); refundPaypalModal.classList.add('hidden'); showAdminNotification(result.message || 'Refund sent.'); await fetchAllReturns(); if (searchForm) searchForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); } catch (error) { showAdminNotification(`Error: ${error.message}`, true); } finally { if (spinner) spinner.classList.add('hidden'); confirmBtn.disabled = false; } } }); }
+    // ADDED (2026-08-11): "Mark as Manually Refunded" modal -- same
+    // editable-amount/spinner/disable-while-in-flight pattern as the
+    // credit and PayPal-refund modals above. Posts to
+    // 'mark-manual-refund', which only writes a ledger entry -- no money
+    // moves through this call.
+    if (manualRefundModal) { manualRefundModal.addEventListener('click', async (e) => { const confirmBtn = e.target.closest('#manual-refund-modal-confirm-btn'); const cancelBtn = e.target.closest('#manual-refund-modal-cancel-btn'); if (cancelBtn) manualRefundModal.classList.add('hidden'); if (confirmBtn) { const orderId = document.getElementById('manual-refund-hidden-order-id').value; const amount = document.getElementById('manual-refund-value-input').value; const reference = document.getElementById('manual-refund-reference-input').value.trim(); if (!orderId || !amount) return showAdminNotification('Data is missing. Please close and retry.', true); const spinner = document.getElementById('manual-refund-modal-spinner'); if (spinner) spinner.classList.remove('hidden'); confirmBtn.disabled = true; try { const token = await fbAuth.currentUser.getIdToken(); const response = await fetch('/api/admin-orders?action=mark-manual-refund', { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId, amount: parseFloat(amount), reference }) });
+            const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Failed to log refund'); manualRefundModal.classList.add('hidden'); showAdminNotification(result.message || 'Refund logged.'); const details = document.querySelector(`.order-card[data-doc-id="${orderId}"] .order-card-details`); if (details) details.dataset.loaded = ''; if (searchForm) searchForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); } catch (error) { showAdminNotification(`Error: ${error.message}`, true); } finally { if (spinner) spinner.classList.add('hidden'); confirmBtn.disabled = false; } } }); }
     if (cancelSelectedBtn) { cancelSelectedBtn.addEventListener('click', () => { const selectedItems = Array.from(cancellationForm.querySelectorAll('input:checked')).map(cb => ({ productId: cb.value, quantity: parseInt(cb.dataset.quantity, 10) })); if (selectedItems.length > 0) performCancellation({ orderId: currentOrderForCancellation.docId, itemsToCancel: selectedItems }); }); }
     if (cancelFullBtn) { cancelFullBtn.addEventListener('click', () => { showAdminConfirm('Are you sure you want to cancel the entire order?', () => { performCancellation({ orderId: currentOrderForCancellation.docId, itemsToCancel: [] }); }); }); }
     if (closeCancelModalBtn) { closeCancelModalBtn.addEventListener('click', () => { if(cancelModal) cancelModal.classList.add('hidden'); currentOrderForCancellation = null; }); }
@@ -2090,6 +2287,21 @@ if (createReplacementTarget) {
                     }
                 });
             }
+        });
+    }
+
+    // NEW (2026-08-09): toggle the hidden usage-history row rendered under
+    // each voucher in renderVouchersTable() above.
+    const vouchersTableContainer = document.getElementById('vouchers-table-container');
+    if (vouchersTableContainer) {
+        vouchersTableContainer.addEventListener('click', (e) => {
+            const toggleBtn = e.target.closest('.toggle-voucher-history-btn');
+            if (!toggleBtn) return;
+            const targetRow = document.getElementById(toggleBtn.dataset.target);
+            if (!targetRow) return;
+            const isHidden = targetRow.classList.contains('hidden');
+            targetRow.classList.toggle('hidden');
+            toggleBtn.textContent = toggleBtn.textContent.replace(isHidden ? 'View' : 'Hide', isHidden ? 'Hide' : 'View');
         });
     }
 
@@ -2421,7 +2633,8 @@ async function renderAdminContactUsPage() {
      // Clear other fields maybe?
     document.getElementById('contact-us-title').value = '';
     document.getElementById('contact-us-subtitle').value = '';
-    document.getElementById('contact-us-map-path').value = '';
+    document.getElementById('contact-us-map-query').value = '';
+    document.getElementById('contact-us-map-zoom').value = '';
     document.getElementById('opening-hours-title').value = '';
     document.getElementById('opening-hours-list').value = '';
 
@@ -2432,7 +2645,8 @@ async function renderAdminContactUsPage() {
         // Populate fields
         document.getElementById('contact-us-title').value = data.pageTitle || 'Get in Touch';
         document.getElementById('contact-us-subtitle').value = data.pageSubtitle || '';
-        document.getElementById('contact-us-map-path').value = data.mapImagePath || '';
+        document.getElementById('contact-us-map-query').value = data.mapQuery || '';
+        document.getElementById('contact-us-map-zoom').value = data.mapZoom || 15;
         document.getElementById('opening-hours-title').value = data.openingHours?.title || 'Opening Hours';
         document.getElementById('opening-hours-list').value = data.openingHours?.hours?.join('\n') || '';
 
@@ -2480,7 +2694,8 @@ async function renderAdminContactUsPage() {
         const payload = {
             pageTitle: document.getElementById('contact-us-title').value,
             pageSubtitle: document.getElementById('contact-us-subtitle').value,
-            mapImagePath: document.getElementById('contact-us-map-path').value,
+            mapQuery: document.getElementById('contact-us-map-query').value,
+            mapZoom: parseInt(document.getElementById('contact-us-map-zoom').value, 10) || 15,
             contactDetails: detailsData, // Ensure this matches backend expectation
             openingHours: {
                 title: document.getElementById('opening-hours-title').value,
@@ -2581,7 +2796,18 @@ async function renderAdminFaqsPage() {
 
     try {
         // Fetch the array of FAQs
-        const faqsArray = await fetchAdminAPI('/api/content-manager?page=faqs'); // Fetch data
+        const rawFaqs = await fetchAdminAPI('/api/content-manager?page=faqs'); // Fetch data
+        // FIX (2026-08-11): the API returns a bare array only when no doc
+        // exists yet (DEFAULTS.faqs = []); once anything has ever been saved,
+        // GET returns the real Firestore doc shape {faqs: [...]} instead
+        // (POST writes docRef.set({ faqs: payload.faqs })). This page only
+        // ever handled the bare-array shape, so after the very first save it
+        // could never display existing FAQs again -- always silently fell
+        // back to one blank placeholder item, even though the real data was
+        // still saved and rendering correctly on the live customer-facing
+        // FAQ page (fetchAndDisplayStaticPage in app.js already unwraps both
+        // shapes). Mirrors that same unwrapping here.
+        const faqsArray = Array.isArray(rawFaqs) ? rawFaqs : (rawFaqs?.faqs || []);
         container.innerHTML = ''; // Clear loading
 
         if (faqsArray && faqsArray.length > 0) {
@@ -2690,6 +2916,28 @@ function addFaqInputs(container, faqData = {}, index) {
     });
 }
 
+// ADDED (2026-08-11): shows only the URL field matching the selected
+// Banner Type (image vs video) on the Site Settings page. Uses .onchange=
+// (not addEventListener) since renderAdminSiteSettingsPage() re-runs every
+// time the admin navigates to this page -- addEventListener would stack a
+// duplicate handler on every visit.
+function toggleHeroMediaFields() {
+    const mediaType = document.getElementById('setting-hero-media-type').value;
+    document.getElementById('setting-hero-image-group').classList.toggle('hidden', mediaType !== 'image');
+    document.getElementById('setting-hero-video-group').classList.toggle('hidden', mediaType !== 'video');
+}
+
+// ADDED (2026-08-11): same show/hide pattern as toggleHeroMediaFields(),
+// for the Homepage Unboxing Promo section -- the poster field only makes
+// sense in video mode (it's the loading placeholder for the <video>), so
+// it toggles alongside the video URL field rather than being its own case.
+function toggleUnboxingMediaFields() {
+    const mediaType = document.getElementById('setting-unboxing-media-type').value;
+    document.getElementById('setting-unboxing-image-group').classList.toggle('hidden', mediaType !== 'image');
+    document.getElementById('setting-unboxing-video-group').classList.toggle('hidden', mediaType !== 'video');
+    document.getElementById('setting-unboxing-poster-group').classList.toggle('hidden', mediaType !== 'video');
+}
+
 // --- ADMIN SITE SETTINGS---
 async function renderAdminSiteSettingsPage() {
     console.log("--- renderAdminSiteSettingsPage STARTED ---");
@@ -2708,6 +2956,29 @@ async function renderAdminSiteSettingsPage() {
         document.getElementById('setting-font-headings').value = data.fontFamilyHeadings || "'Lora', serif";
         document.getElementById('setting-font-body').value = data.fontFamilyBody || "'Inter', sans-serif";
         
+        // ADDED (2026-08-11): Homepage Hero Banner (see applyHeroBanner()
+        // in public/app.js and heroMediaType/heroImageUrl/heroVideoUrl in
+        // api/site-settings.js's DEFAULT_SETTINGS).
+        document.getElementById('setting-hero-media-type').value = data.heroMediaType || 'image';
+        document.getElementById('setting-hero-image-url').value = data.heroImageUrl || 'assets/images/hero_main_banner.jpg';
+        document.getElementById('setting-hero-video-url').value = data.heroVideoUrl || '';
+        toggleHeroMediaFields();
+        document.getElementById('setting-hero-media-type').onchange = toggleHeroMediaFields;
+
+        // ADDED (2026-08-11): Homepage Unboxing Promo (see the unboxing*
+        // fields in api/site-settings.js's DEFAULT_SETTINGS and the
+        // unboxingHtml block in displayProducts(), public/app.js).
+        document.getElementById('setting-unboxing-enabled').checked = data.unboxingEnabled !== false;
+        document.getElementById('setting-unboxing-media-type').value = data.unboxingMediaType || 'video';
+        document.getElementById('setting-unboxing-image-url').value = data.unboxingImageUrl || '';
+        document.getElementById('setting-unboxing-video-url').value = data.unboxingVideoUrl || 'https://www.w3schools.com/html/mov_bbb.mp4';
+        document.getElementById('setting-unboxing-poster-url').value = data.unboxingPosterUrl || 'https://placehold.co/800x400/111/333?text=Experience';
+        document.getElementById('setting-unboxing-tag').value = data.unboxingTag || 'The Unboxing Experience';
+        document.getElementById('setting-unboxing-title').value = data.unboxingTitle || 'Hand-Packed with Silk & Soul';
+        document.getElementById('setting-unboxing-description').value = data.unboxingDescription || 'Every gift includes a hand-written card and our signature gold-foil seal.';
+        toggleUnboxingMediaFields();
+        document.getElementById('setting-unboxing-media-type').onchange = toggleUnboxingMediaFields;
+
         // UX & Stock
         document.getElementById('setting-enable-quickview').checked = data.enableQuickView || false;
         document.getElementById('setting-show-low-stock').checked = data.showLowStockIndicator || false;
@@ -2739,6 +3010,21 @@ async function renderAdminSiteSettingsPage() {
 
         // --- Build Payload (All Fields) ---
         const payload = {
+            // Homepage Hero Banner
+            heroMediaType: document.getElementById('setting-hero-media-type').value,
+            heroImageUrl: document.getElementById('setting-hero-image-url').value.trim(),
+            heroVideoUrl: document.getElementById('setting-hero-video-url').value.trim(),
+
+            // Homepage Unboxing Promo
+            unboxingEnabled: document.getElementById('setting-unboxing-enabled').checked,
+            unboxingMediaType: document.getElementById('setting-unboxing-media-type').value,
+            unboxingImageUrl: document.getElementById('setting-unboxing-image-url').value.trim(),
+            unboxingVideoUrl: document.getElementById('setting-unboxing-video-url').value.trim(),
+            unboxingPosterUrl: document.getElementById('setting-unboxing-poster-url').value.trim(),
+            unboxingTag: document.getElementById('setting-unboxing-tag').value.trim(),
+            unboxingTitle: document.getElementById('setting-unboxing-title').value.trim(),
+            unboxingDescription: document.getElementById('setting-unboxing-description').value.trim(),
+
             // Theming
             primaryColor: document.getElementById('setting-primary-color').value,
             ctaColorGreen: document.getElementById('setting-cta-color').value,
@@ -3119,7 +3405,13 @@ async function renderAdminTermsConditionsPage() {
         }
 
         try {
-            const response = await fetchAdminAPI('//api/content-manager?page=terms_and_conditions', {
+            // FIX (2026-08-11): was '//api/content-manager...' -- the leading
+            // double slash is browser-interpreted as a protocol-relative URL
+            // (host "api"), which would fail in production. Every sibling
+            // page (About Us, Our Mission, Privacy Policy) uses a single
+            // leading slash; this one was the odd one out and saving new
+            // Terms & Conditions content would have silently failed.
+            const response = await fetchAdminAPI('/api/content-manager?page=terms_and_conditions', {
                 method: 'POST',
                 body: JSON.stringify({
                     pageTitle: titleInput.value,
@@ -3294,18 +3586,64 @@ async function renderAdminFooterPage() {
 // --- ADMIN: DISCOVERY ENGINE LOGIC ---
 
 // 1. LOAD CONFIG
+// Suggestions can only ever be picked from this list -- the union of Search
+// Tags (dietary/occasion/contents) and Virtual Tag Mapper names, since both
+// are valid ways for a chip to actually match a product (exact tag-field
+// match or virtual-keyword text search -- see checkSmartMatch in app.js).
+// This is what prevents a context from suggesting a chip name that doesn't
+// exist anywhere (see project_chip_filter_system memory: "Vegan" vs "Vegan
+// Options" drift, 2026-08-08). A tag added on the Search Tags page shows up
+// here immediately, without needing a matching Virtual Tag entry too.
+let discoveryVirtualTagNames = [];
+
+function renderSuggestionCheckboxes(selected = []) {
+    if (discoveryVirtualTagNames.length === 0) {
+        return `<p class="text-xs text-gray-400 italic">No Search Tags or Virtual Tags defined yet -- add one first.</p>`;
+    }
+    return discoveryVirtualTagNames.map(name => `
+        <label class="inline-flex items-center mr-3 mb-1 text-sm">
+            <input type="checkbox" class="ctx-suggestion-cb mr-1" value="${name}" ${selected.includes(name) ? 'checked' : ''}> ${name}
+        </label>
+    `).join('');
+}
+
 async function loadDiscoveryConfig() {
     try {
         const docRef = db.collection('config').doc('discovery_engine');
         const doc = await docRef.get();
-        
+
         let data = doc.exists ? doc.data() : { contexts: [], virtual_tags: {} };
-        
+
+        // Suggestion checkboxes are sourced from Search Tags + Virtual Tags
+        // combined, so compute that list before rendering either section.
+        // Fetched independently here (not via the `globalSearchTags` used on
+        // the Search Tags page) because that variable is scoped inside a
+        // different DOMContentLoaded closure and isn't reachable from this
+        // part of the file -- referencing it directly threw a silent
+        // ReferenceError caught by this function's own try/catch, which
+        // surfaced as a blocking "Failed to load Discovery Config" alert.
+        let searchTagNames = [];
+        try {
+            const settingsToken = await fbAuth.currentUser.getIdToken();
+            const settingsRes = await fetch('/api/site-settings?type=settings', {
+                headers: { Authorization: 'Bearer ' + settingsToken }
+            });
+            const settings = await settingsRes.json();
+            searchTagNames = [
+                ...(settings.tags_dietary || []),
+                ...(settings.tags_occasion || []),
+                ...(settings.tags_contents || [])
+            ];
+        } catch (tagError) {
+            console.error("Could not load Search Tags for Suggestions picker:", tagError);
+        }
+        discoveryVirtualTagNames = [...new Set([...searchTagNames, ...Object.keys(data.virtual_tags || {})])];
+
         // Render Contexts
         renderContextsAdmin(data.contexts || []);
         // Render Virtual Tags
         renderVirtualTagsAdmin(data.virtual_tags || {});
-        
+
     } catch (error) {
         console.error("Error loading discovery config:", error);
         alert("Failed to load Discovery Config.");
@@ -3342,8 +3680,8 @@ function renderContextsAdmin(contexts) {
             </div>
             <div class="form-group">
                 <label>Suggestions (Chips to show):</label>
-                <input type="text" class="ctx-suggestions-input" value="${(ctx.suggestions || []).join(', ')}" placeholder="Cheese Pairings, Glassware">
-                <small>Comma separated (Must match Virtual Tag names)</small>
+                <div class="ctx-suggestions-group">${renderSuggestionCheckboxes(ctx.suggestions || [])}</div>
+                <small>Picked from Virtual Tags below -- can't drift out of sync</small>
             </div>
         `;
         container.appendChild(div);
@@ -3404,8 +3742,8 @@ if (addCtxBtn) {
                 </div>
                 <div class="form-group md:col-span-2">
                     <label class="block text-xs font-bold text-gray-500 uppercase">Suggestions (Chips)</label>
-                    <input type="text" class="ctx-suggestions-input w-full p-2 border rounded text-sm" placeholder="Cheese, Snacks...">
-                    <p class="text-xs text-gray-400 mt-1">Comma separated. MUST match a 'Virtual Tag' name below.</p>
+                    <div class="ctx-suggestions-group">${renderSuggestionCheckboxes([])}</div>
+                    <p class="text-xs text-gray-400 mt-1">Picked from Virtual Tags below -- can't drift out of sync.</p>
                 </div>
             </div>
         `;
@@ -3456,7 +3794,7 @@ document.getElementById('save-discovery-config-btn')?.addEventListener('click', 
         contexts.push({
             id: card.querySelector('.ctx-id-input').value,
             triggers: card.querySelector('.ctx-triggers-input').value.split(',').map(s => s.trim()).filter(s => s),
-            suggestions: card.querySelector('.ctx-suggestions-input').value.split(',').map(s => s.trim()).filter(s => s)
+            suggestions: Array.from(card.querySelectorAll('.ctx-suggestions-group input:checked')).map(cb => cb.value)
         });
     });
 

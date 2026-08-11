@@ -179,7 +179,23 @@ const CLICK_HANDLERS = [
                 e.preventDefault();
                 let pageName = pageTarget.replace('/', '').replace(/-/g, '_');
                 if (pageName === 'terms_conditions') pageName = 'terms_and_conditions';
-                fetchAndDisplayStaticPage(pageName);
+                // FIX (2026-08-11): this used to call fetchAndDisplayStaticPage(
+                // pageName) directly, which swaps visible content but never
+                // touches the URL -- same class of bug as the 2026-08-01 fix
+                // above for .footer-column a (data-argument links) and the
+                // "Back to Home" button fix the same day. Concretely: clicking
+                // "Privacy Policy" in the footer while on /account or
+                // /account/orders left the browser showing that old URL while
+                // the Privacy Policy content displayed underneath -- caught by
+                // the user live. The footer's stored routeName values are
+                // inconsistently formatted (mix of hyphens/underscores, e.g.
+                // "/contact_us", "/terms-conditions", "/our_mission") and don't
+                // line up 1:1 with the router's registered paths, so we can't
+                // just router.navigate(pageTarget) directly -- instead rebuild
+                // a canonical hyphenated path from the already-normalized
+                // pageName (which every static route above is registered
+                // under) and navigate through the router with that.
+                router.navigate('/' + pageName.replace(/_/g, '-'));
                 return true;
             }
             return false;
@@ -258,7 +274,19 @@ const CLICK_HANDLERS = [
         selector: '#place-order-btn',
         handler: (target, e) => {
             // Prevent the default button behavior
-            e.preventDefault(); 
+            e.preventDefault();
+            // ADDED (2026-08-11): block order placement until the Terms &
+            // Conditions checkbox is checked. See the fix comment above the
+            // checkbox's HTML in displayCheckoutPage() for context. This
+            // covers the discount-covered / no-payment path; the PayPal path
+            // is gated separately in renderPayPalButtonsIfPresent()'s onClick.
+            const termsBox = document.getElementById('checkout-terms-agree');
+            if (termsBox && !termsBox.checked) {
+                const err = document.getElementById('checkout-terms-error');
+                if (err) err.style.display = 'block';
+                termsBox.focus();
+                return;
+            }
             // Now, call the placeOrder function to handle the order logic
             placeOrder();
         }
@@ -274,8 +302,22 @@ const CLICK_HANDLERS = [
     },
 
     // --- MY ACCOUNT & AUTH ---
-    { selector: '.account-icon-wrapper, .mobile-account-link, #mobile-menu-account-link', handler: () => { renderAccountPage(); closeMobileMenu(); } },
-   
+    // REMOVED (2026-08-08): this handler matched the account icon's inner div
+    // and called renderAccountPage() directly WITHOUT e.preventDefault() or
+    // updating the URL. Since the icon is really `<a href="/account">`, the
+    // browser's default action then ALSO fired right after -- a real full
+    // page navigation to /account on top of the instant SPA render. That
+    // full reload (re-running the entire DOMContentLoaded bootstrap: 5
+    // parallel fetches + Firebase auth re-init) is what looked like "the old
+    // page stays on screen for ~2 seconds before the account page appears" --
+    // the SPA render was correct and instant, but got clobbered by a real
+    // navigation a moment later. The two mobile-specific selectors here
+    // (.mobile-account-link, #mobile-menu-account-link) were never actually
+    // used in any generated markup. Removing this entry lets the generic
+    // `a[href^="/"]` handler at the bottom of handleGlobalClick take over --
+    // it already does e.preventDefault() + router.navigate() (proper SPA
+    // transition, no reload) + closeMobileMenu() when the mobile nav is open.
+
     { selector: '#show-register', handler: (target, e) => { e.preventDefault(); renderRegisterPage(); } },
     { selector: '#show-login', handler: (target, e) => { e.preventDefault(); renderLoginPage(); } },
     { 
@@ -307,7 +349,11 @@ const CLICK_HANDLERS = [
             const addressId = target.dataset.addressId;
             showConfirmationModal('Are you sure you want to delete this address?', async () => {
                 try {
-                   await fetchWithAuth('/api/user-profile?type=address&addressId=${addressId}', { method: 'DELETE' });
+                   // FIX (2026-08-08): was a plain single-quoted string, not a
+                   // template literal -- "${addressId}" was being sent to the
+                   // API literally instead of the real ID, so every delete
+                   // request targeted a non-existent address.
+                   await fetchWithAuth(`/api/user-profile?type=address&addressId=${addressId}`, { method: 'DELETE' });
                     // Refresh the list from the server after deleting
                     userAddresses = userAddresses.filter(addr => addr.id !== addressId);
                     renderMyAddressesPage();
@@ -317,13 +363,40 @@ const CLICK_HANDLERS = [
             });
         }
     },
-    { 
-        selector: '.set-default-address', 
+    {
+        selector: '.set-default-address',
         handler: async (target) => {
             const addressId = target.dataset.addressId;
-            const addressToUpdate = userAddresses.find(addr => addr.id === addressId);
-            if (!addressToUpdate) return;
-            
+            let addressToUpdate = userAddresses.find(addr => addr.id === addressId);
+
+            // HARDENED (2026-08-08): this used to silently `return` with no
+            // feedback at all if the address wasn't found in the in-memory
+            // userAddresses array -- which looks exactly like "the button
+            // isn't responding" from the user's side (no error, no spinner,
+            // nothing happens). That mismatch can happen if userAddresses
+            // went stale (e.g. edited/added an address in another tab, or
+            // the list re-rendered off cached data). Refetch once from the
+            // server before giving up, and surface a real error if it's
+            // still missing instead of failing silently.
+            if (!addressToUpdate) {
+                try {
+                    userAddresses = await fetchWithAuth('/api/user-profile?type=address');
+                    addressToUpdate = userAddresses.find(addr => addr.id === addressId);
+                } catch (error) {
+                    showConfirmationModal(`Error setting default address: ${error.message}`);
+                    return;
+                }
+            }
+            if (!addressToUpdate) {
+                showConfirmationModal('Could not find that address -- please refresh the page and try again.');
+                return;
+            }
+
+            // Visual busy-state so a slow request doesn't look unresponsive.
+            const originalText = target.textContent;
+            target.disabled = true;
+            target.textContent = 'Saving...';
+
             try {
                 // Set the isDefault flag to true and send the update
                 await fetchWithAuth('/api/user-profile?type=address', {
@@ -334,6 +407,8 @@ const CLICK_HANDLERS = [
                 userAddresses = await fetchWithAuth('/api/user-profile?type=address');
                 renderMyAddressesPage();
             } catch (error) {
+                target.disabled = false;
+                target.textContent = originalText;
                 showConfirmationModal(`Error setting default address: ${error.message}`);
             }
         }
@@ -799,6 +874,12 @@ function defineRoutes() {
     router.addRoute('/our-mission', () => fetchAndDisplayStaticPage('our_mission'));
     router.addRoute('/privacy-policy', () => fetchAndDisplayStaticPage('privacy_policy'));
     router.addRoute('/terms-and-conditions', () => fetchAndDisplayStaticPage('terms_and_conditions'));
+    // ADDED (2026-08-11): these static pages were reachable via the footer
+    // (a[data-target] handler below) but had no router entry at all -- see
+    // that handler's fix comment for why this matters.
+    router.addRoute('/about-us', () => fetchAndDisplayStaticPage('about_us'));
+    router.addRoute('/faqs', () => fetchAndDisplayStaticPage('faqs'));
+    router.addRoute('/delivery-info', () => fetchAndDisplayStaticPage('delivery_info'));
 }
 
 
@@ -1481,7 +1562,12 @@ async function fetchWithAuth(url, options = {}) {
         
         // If the code is valid, apply it
         appliedDiscount = discountData;
-        messageEl.textContent = `Success! "${discountData.description}" applied.`;
+        // FIX (2026-08-09): discount codes created before description
+        // generation was added at api/vouchers.js's creation endpoint have
+        // no `description` field, which rendered as the literal text
+        // "undefined" here. Fall back to the code itself so old codes still
+        // read sensibly.
+        messageEl.textContent = `Success! "${discountData.description || discountData.code || trimmedCode}" applied.`;
         messageEl.className = 'discount-message success';
 
     } catch (error) {
@@ -2135,22 +2221,40 @@ function displayProducts(products, gridElement = document.getElementById('produc
         }
 
         // --- SURPRISE & DELIGHT INJECTION (Fixed) ---
+        // CHANGED (2026-08-11): was fully hardcoded (video URL, poster,
+        // tag/title/description) -- now admin-configurable via Site
+        // Settings' "Homepage Unboxing Promo" section. `s.unboxingEnabled
+        // === false` (not just falsy) is the skip check so a still-loading
+        // or failed appSettings fetch doesn't silently hide this by
+        // accident -- see the fetchSiteSettings() catch block's smaller
+        // fallback object, which has no unboxingEnabled key at all.
         if (!isSearchActive && (index + 1) % 10 === 0) {
+            const s = window.appSettings || {};
+            if (s.unboxingEnabled === false) {
+                return finalCardHtml;
+            }
+            const unboxingMediaType = s.unboxingMediaType || 'video';
+            const unboxingImageUrl = s.unboxingImageUrl || '';
+            const unboxingVideoUrl = s.unboxingVideoUrl || 'https://www.w3schools.com/html/mov_bbb.mp4';
+            const unboxingPosterUrl = s.unboxingPosterUrl || 'https://placehold.co/800x400/111/333?text=Experience';
+            const unboxingTag = s.unboxingTag || 'The Unboxing Experience';
+            const unboxingTitle = s.unboxingTitle || 'Hand-Packed with Silk & Soul';
+            const unboxingDescription = s.unboxingDescription || 'Every gift includes a hand-written card and our signature gold-foil seal.';
+            const unboxingMediaHtml = (unboxingMediaType === 'image' && unboxingImageUrl)
+                ? `<img src="${unboxingImageUrl}" alt="" class="unboxing-video">`
+                : `<video autoplay muted loop playsinline class="unboxing-video" poster="${unboxingPosterUrl}"><source src="${unboxingVideoUrl}" type="video/mp4"></video>`;
             const unboxingHtml = `
                 <div class="unboxing-row-card">
                     <div class="unboxing-video-container">
-                       // Inside displayProducts function, in the unboxingHtml block:
-                    <video autoplay muted loop playsinline class="unboxing-video" poster="https://placehold.co/800x400/111/333?text=Experience">
-                        <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
-                    </video>
+                        ${unboxingMediaHtml}
                         <div class="unboxing-overlay">
-                            <span class="unboxing-tag">The Unboxing Experience</span>
-                            <h3>Hand-Packed with Silk & Soul</h3>
-                            <p>Every gift includes a hand-written card and our signature gold-foil seal.</p>
+                            <span class="unboxing-tag">${unboxingTag}</span>
+                            <h3>${unboxingTitle}</h3>
+                            <p>${unboxingDescription}</p>
                         </div>
                     </div>
                 </div>`;
-            
+
             // CORRECT VARIABLE NAME: Use finalCardHtml
             return finalCardHtml + unboxingHtml;
         }
@@ -3160,7 +3264,17 @@ async function fetchAndDisplayStaticPage(pageName) {
         // Route to the correct rendering function based on the page name and expected structure
         if (pageName === 'faqs' && (Array.isArray(pageContent) || (pageContent && Array.isArray(pageContent.faqs)))) {
             renderFaqPage(pageContent.faqs || pageContent);
-        } else if (pageName === 'delivery_info' && Array.isArray(pageContent)) {
+        } else if (pageName === 'delivery_info' && pageContent.pageTitle && Array.isArray(pageContent.sections)) {
+            // FIX (2026-08-11): this checked Array.isArray(pageContent) --
+            // but the content-manager API's GET handler for delivery_info
+            // always returns {pageTitle, sections} (an object), never a bare
+            // array (see api/content-manager.js's special-case handling for
+            // this page). That meant this branch could never match, and
+            // every load silently fell through to the generic 'sections'
+            // fallback near the bottom of this chain instead -- so the
+            // purpose-built renderDeliveryInfoPage() (with its icon badges)
+            // was dead code that never actually ran. Fixed to match the
+            // real shape, same pattern as about_us/our_mission/etc. below.
             renderDeliveryInfoPage(pageContent);
         } else if (pageName === 'contact_us' && pageContent.pageTitle) { // Specific check for Contact Us structure
              renderContactPage(pageContent);
@@ -3218,9 +3332,18 @@ function renderGenericStaticPage(pageData, pageName, titleOverride = null) {
         </div>`;
 
     // Add event listener to the back button
+    // FIX (2026-08-11): was bound directly to showAllProducts, which changes
+    // the visible content but never touches the URL (no pushState) -- so
+    // clicking "Back to Home" from here left the browser showing /privacy-
+    // policy (or whichever static page) while the homepage content was
+    // displayed underneath. Same class of bug as the 2026-08-01 fix applied
+    // to other back-to-home buttons elsewhere in this file; this one was
+    // missed. router.navigate('/') updates the URL via pushState AND calls
+    // the '/' route handler (renderHomePage -> showAllProducts()), so the
+    // visible behavior is unchanged, only the URL now stays correct.
     const backBtn = pageStatic.querySelector('#back-to-home-btn');
     if (backBtn) {
-         backBtn.addEventListener('click', showAllProducts);
+         backBtn.addEventListener('click', () => router.navigate('/'));
     } else {
          console.warn("Could not find #back-to-home-btn in static page content.");
     }
@@ -3259,27 +3382,54 @@ function renderContactPage(data) {
                 </div>
 
                 <div class="contact-map-panel">
-                    <img src="${data.mapImagePath}" alt="Map of our location">
+                    <!-- FIX (2026-08-11): was a static <img> pointing at a fixed
+                         file (mapImagePath) -- besides once being mislabelled
+                         (a Liverpool screenshot saved as the London map), a
+                         static image has no zoom/pan and no way for an admin
+                         to control what it actually shows short of sourcing a
+                         new image file. Replaced with a real embedded, live
+                         Google Map built from an address query + zoom level,
+                         both admin-editable. No API key needed (public
+                         maps.google.com/maps?...&output=embed endpoint);
+                         customers can pan/zoom it themselves too. -->
+                    <iframe
+                        class="contact-map-embed"
+                        src="https://maps.google.com/maps?q=${encodeURIComponent(data.mapQuery || 'London, UK')}&z=${data.mapZoom || 15}&output=embed"
+                        style="border:0; width:100%; height:100%; min-height:300px;"
+                        loading="lazy"
+                        referrerpolicy="no-referrer-when-downgrade"
+                        title="Map of our location"></iframe>
                 </div>
             </div>
         </div>`;
 
-    pageStatic.querySelector('#back-to-home-btn').addEventListener('click', showAllProducts);
+    pageStatic.querySelector('#back-to-home-btn').addEventListener('click', () => router.navigate('/'));
     showPage('static');
 }
 // 3. Add this new function specifically for rendering the FAQs page
 function renderFaqPage(faqData) {
+    // RESTYLED (2026-08-11): was rendering with zero custom CSS at all --
+    // bare <details>/<summary> elements, so the browser's default triangle
+    // marker and plain black-on-white styling was all that showed (user
+    // feedback: "looks very basic... like a list made by an amator"). Kept
+    // the same <details>/<summary> markup for free, dependency-free
+    // accordion behavior and accessibility, but now wraps the question text
+    // with a custom chevron icon and card styling (see .faq-item rules in
+    // style.css), plus a short intro line and a "still need help?" link
+    // through to Contact Us so the page reads as a real page rather than a
+    // raw list.
     pageStatic.innerHTML = `
         <div class="static-content-container">
             <div class="page-header"><h2>Frequently Asked Questions</h2><button class="btn btn-secondary" id="back-to-home-btn">Back to Home</button></div>
+            <p class="faq-intro">Quick answers to the questions we're asked most. Can't find what you need? <a href="#" data-target="/contact_us">Get in touch</a> and we'll help.</p>
             <div class="faq-list">${faqData.map(item => `
                 <details class="faq-item">
-                    <summary class="faq-question">${item.question}</summary>
+                    <summary class="faq-question"><span>${item.question}</span><i class="fas fa-chevron-down faq-chevron" aria-hidden="true"></i></summary>
                     <p class="faq-answer">${item.answer}</p>
                 </details>`).join('')}
             </div>
         </div>`;
-    pageStatic.querySelector('#back-to-home-btn').addEventListener('click', showAllProducts);
+    pageStatic.querySelector('#back-to-home-btn').addEventListener('click', () => router.navigate('/'));
     showPage('static');
 }
 
@@ -3290,25 +3440,32 @@ function renderDeliveryInfoPage(deliveryData) {
         return;
     }
 
+    // RESTYLED (2026-08-11): this whole render used Tailwind utility classes
+    // (text-3xl, font-bold, text-gray-800, flex, items-start, space-x-4,
+    // etc.) but the customer-facing site never loads Tailwind at all (only
+    // style.css) -- only the admin panel does. Every one of those classes
+    // was inert dead weight; the page was riding entirely on whatever
+    // .static-content-container/.page-header happened to inherit, with no
+    // icon sizing/color, no spacing between sections, and no real hierarchy.
+    // Replaced with real classes backed by actual CSS (see .delivery-section
+    // rules in style.css), matching the same visual language as the FAQ
+    // page fix earlier this session.
     const pageTitle = deliveryData.pageTitle || 'Delivery Information';
-    // Ensure sections is an array before mapping
     const sectionsHtml = (Array.isArray(deliveryData.sections) && deliveryData.sections.length > 0)
         ? deliveryData.sections.map(item => `
-                <div class="delivery-section mb-8 flex items-start space-x-4">
-                    <div class="mt-1 w-8 text-center flex-shrink-0"> {/* Icon container */}
-                        <i class="${getDeliveryIconClass(item.iconName)} text-blue-600 text-2xl"></i> {/* Use helper */}
-                    </div>
-                    <div> 
-                        <h3 class="font-semibold text-lg mb-1 text-gray-800">${item.title || 'Untitled Section'}</h3>
-                        <p class="text-gray-700 leading-relaxed" style="white-space: pre-wrap;">${item.content || ''}</p> {/* Style content */}
+                <div class="delivery-section">
+                    <div class="delivery-section-icon"><i class="${getDeliveryIconClass(item.iconName)}"></i></div>
+                    <div class="delivery-section-body">
+                        <h3>${item.title || 'Untitled Section'}</h3>
+                        <p>${item.content || ''}</p>
                     </div>
                 </div>`).join('')
         : '<p class="text-gray-500">Delivery information is currently unavailable.</p>'; // Fallback message
 
     pageStatic.innerHTML = `
-        <div class="static-content-container container mx-auto px-4 py-8">
-            <div class="page-header pb-4 mb-8 border-b"> 
-                <h2 class="text-3xl font-bold text-gray-900">${pageTitle}</h2> 
+        <div class="static-content-container">
+            <div class="page-header">
+                <h2>${pageTitle}</h2>
                 <button class="btn btn-secondary" id="back-to-home-btn">Back to Home</button>
             </div>
             <div class="delivery-info-list">
@@ -3319,7 +3476,7 @@ function renderDeliveryInfoPage(deliveryData) {
     // Re-attach listener after setting innerHTML
     const backBtn = pageStatic.querySelector('#back-to-home-btn');
     if (backBtn) {
-        backBtn.addEventListener('click', showAllProducts);
+        backBtn.addEventListener('click', () => router.navigate('/'));
     } else {
         console.warn("Could not find #back-to-home-btn in static page content.");
     }
@@ -3332,7 +3489,9 @@ function getDeliveryIconClass(iconName = '') {
         truckfast: 'fa-solid fa-truck-fast', // Delivery truck
         globeeurope: 'fa-solid fa-globe', // Generic globe for international
         magnifyingglasslocation: 'fa-solid fa-magnifying-glass-location', // Tracking
-        clipboardlist: 'fa-solid fa-clipboard-list' // Notes
+        clipboardlist: 'fa-solid fa-clipboard-list', // Notes
+        giftcard: 'fa-solid fa-gift', // Packaging & Presentation
+        gift: 'fa-solid fa-gift'
         // Add more mappings here if needed
     };
     // Clean the input name
@@ -3878,12 +4037,18 @@ async function saveCart() {
     // 4. Save the new object to localStorage
     localStorage.setItem('luxuryHampersCart', JSON.stringify(cartData));
 
-    // 5. Sync to backend (no change here)
+    // 5. Sync to backend
+    // FIX (2026-08-11): now also sends the same expiryTimestamp used for the
+    // localStorage copy, so the server-saved cart honors the admin's Cart
+    // Persistence (Days) setting too -- previously the remote cart never
+    // expired at all, so it got merged back into localStorage on every
+    // login regardless of age. See auth.js's onAuthStateChanged handler,
+    // which now checks cartExpires before honoring the remote cart.
     if (auth.isLoggedIn()) {
         try {
             await fetchWithAuth('/api/user-profile?type=cart', {
                 method: 'POST',
-                body: JSON.stringify({ cart: cart })
+                body: JSON.stringify({ cart: cart, cartExpires: expiryTimestamp })
             });
         } catch (error) {
             console.error("Could not sync cart to backend:", error);
@@ -4365,6 +4530,27 @@ function displayCheckoutPage() {
                 stepContentHtml += `<div class="review-section"><h4>Payment Method:</h4><p>N/A (Covered by Discount)</p></div>`;
                 actionButtonHtml = `<button id="place-order-btn" class="btn btn-primary btn-full-width mt-6"><span class="btn-text">Place Order</span><div class="spinner" style="display: none;"></div></button><a href="#" id="checkout-back-btn" class="back-link">Go Back</a>`;
             }
+
+            // ADDED (2026-08-11): required "I agree to the Terms & Conditions"
+            // checkbox, gating order placement. Previously there was no
+            // agreement checkpoint anywhere in the buyer journey -- the T&Cs
+            // page existed and was linked in the footer, but nothing required
+            // a customer to see or accept it before paying, which is a weak
+            // ("browsewrap") basis for the terms actually being binding.
+            // Placed here (common to both the PayPal and discount-covered
+            // branches) so it always sits directly above whichever action
+            // button is shown. Enforcement lives in two places: the
+            // '#place-order-btn' click handler (discount-covered orders) and
+            // the PayPal Buttons' onClick callback (renderPayPalButtonsIfPresent) --
+            // both block proceeding until this box is checked.
+            stepContentHtml += `
+                <div class="checkout-terms-agreement review-section">
+                    <label class="checkbox-label" for="checkout-terms-agree">
+                        <input type="checkbox" id="checkout-terms-agree">
+                        I agree to the <a href="/terms-and-conditions" target="_blank" rel="noopener">Terms &amp; Conditions</a>
+                    </label>
+                    <p id="checkout-terms-error" class="error-message" style="display:none;">Please confirm you agree to the Terms &amp; Conditions before continuing.</p>
+                </div>`;
             break;
     }
 
@@ -4401,6 +4587,15 @@ function displayCheckoutPage() {
     showPage('checkout');
     updateCartTotals();
     renderPayPalButtonsIfPresent();
+
+    // Clear the "please agree to the Terms" error as soon as the box is
+    // checked, rather than leaving it up until the next click attempt.
+    document.getElementById('checkout-terms-agree')?.addEventListener('change', (e) => {
+        if (e.target.checked) {
+            const err = document.getElementById('checkout-terms-error');
+            if (err) err.style.display = 'none';
+        }
+    });
 
     document.getElementById('checkout-step1-btn')?.addEventListener('click', () => {
         let isFormValid = true;
@@ -4907,6 +5102,23 @@ async function renderPayPalButtonsIfPresent() {
         container.innerHTML = '';
         await paypal.Buttons({
             style: { layout: 'vertical', color: 'gold', shape: 'rect', label: 'paypal' },
+            // ADDED (2026-08-11): block the PayPal flow from opening at all
+            // until the Terms & Conditions checkbox is checked. onClick runs
+            // before createOrder -- returning actions.reject() here stops
+            // the popup/redirect before any order is created on our side or
+            // PayPal's. Mirrors the same gate on '#place-order-btn' for the
+            // discount-covered (no-payment) checkout path.
+            onClick: (data, actions) => {
+                const termsBox = document.getElementById('checkout-terms-agree');
+                const err = document.getElementById('checkout-terms-error');
+                if (termsBox && !termsBox.checked) {
+                    if (err) err.style.display = 'block';
+                    termsBox.focus();
+                    return actions.reject();
+                }
+                if (err) err.style.display = 'none';
+                return actions.resolve();
+            },
             createOrder: async () => {
                 try {
                     const { orderPayload } = buildOrderPayloadForPayPal();
@@ -5549,6 +5761,18 @@ async function renderMyOrdersPage(skipRefresh = false) {
 
     // 2. THE SPEED FIX: If skipRefresh is true, we use current data instantly.
     if (!skipRefresh) {
+        // FIX (2026-08-08): showPage() used to only get called once, after this
+        // fetch resolved -- so whatever page was on screen before navigating
+        // here (e.g. a product detail page) stayed fully visible for the
+        // entire network round-trip (~1-2s), looking like a brief flash of the
+        // wrong page before "My Orders" appeared. Switching to the orders page
+        // immediately (with existing/cached data, or a loading state if none
+        // yet) removes that flash; the list is simply refreshed in place once
+        // the fetch completes.
+        pageMyOrders.innerHTML = userOrders.length > 0
+            ? pageMyOrders.innerHTML || `<div class="page-header"><h2>My Orders</h2></div><p>Loading orders...</p>`
+            : `<div class="page-header"><h2>My Orders</h2></div><p>Loading orders...</p>`;
+        showPage('my-orders');
         try {
             console.log("[renderMyOrdersPage] Refreshing orders from server...");
             // Use no-cache to ensure we get the latest status updates
@@ -5676,15 +5900,31 @@ async function renderMyOrdersPage(skipRefresh = false) {
 }
 
 function updateReturnStatuses() {
-    const returnWindow = window.appSettings?.returnWindowInDays ?? 28; 
-    const daysSinceOrder = (new Date() - orderDateObj) / (1000 * 3600 * 24);
+    // FIX (2026-08-08): this function threw `ReferenceError: orderDateObj is
+    // not defined` on its very first executable line, every single time --
+    // `orderDateObj` was never defined anywhere in this scope (looks like a
+    // leftover copy-paste from order-detail rendering code, where it's a
+    // real local var), and the `daysSinceOrder` it computed was never even
+    // used below. Also had two more undefined references further down
+    // (`now`, `returnWindowInDays`). Since this runs as the very first line
+    // of `renderMyReturnsPage()`, the crash blocked the My Returns page from
+    // rendering at all -- and because it's also called from the return
+    // *submission* handler's success path (router.navigate('/account/returns')
+    // triggers this), a successful return submission would incorrectly show
+    // "Error: orderDateObj is not defined" to the customer even though their
+    // return request had already been saved. Removed the dead/broken
+    // orderDateObj line and fixed the two other undefined references so the
+    // function does what it clearly intended: mark old Pending returns as
+    // Expired after the return window.
+    const returnWindow = window.appSettings?.returnWindowInDays ?? 28;
+    const now = new Date();
 
     userReturns.forEach(ret => {
         if (ret.status === "Pending") {
             const requestDate = new Date(ret.requestDate);
             const daysSinceRequest = (now - requestDate) / (1000 * 60 * 60 * 24);
 
-            if (daysSinceRequest > returnWindowInDays) {
+            if (daysSinceRequest > returnWindow) {
                 ret.status = "Expired";
             }
         }
@@ -5714,11 +5954,31 @@ function receiveReturnItem(returnId) {
 /// In app.js, REPLACE the entire renderOrderDetailPage function
 // In app.js
 async function renderOrderDetailPage(orderId) {
-    const order = userOrders.find(o => o.id === orderId);
+    let order = userOrders.find(o => o.id === orderId);
+
+    // FIX (2026-08-09): a direct/cold load of an order detail URL (bookmark,
+    // refresh, shared link) could race ahead of fetchInitialUserData() --
+    // userOrders would still be empty at this point, the order wouldn't be
+    // found, and this silently fell back to the My Orders list instead of
+    // showing the order that was actually requested. Same race-condition
+    // class as the My Orders loading fix (see renderMyOrdersPage above) --
+    // if there's an in-flight (or already-resolved) initial data fetch,
+    // wait for it before concluding the order genuinely doesn't exist.
+    if (!order && initialUserDataPromise) {
+        pageOrderDetail.innerHTML = `<div class="page-header"><h2>Order Details</h2></div><p>Loading order...</p>`;
+        showPage('order-detail');
+        try {
+            await initialUserDataPromise;
+        } catch (error) {
+            // fetchInitialUserData already logs/handles its own errors --
+            // just proceed to the re-check below either way.
+        }
+        order = userOrders.find(o => o.id === orderId);
+    }
 
     if (!order) {
         console.error(`Failed to find order ${orderId} in userOrders array.`);
-        renderMyOrdersPage(); // Go back to the list if order not found
+        renderMyOrdersPage(); // Go back to the list if order genuinely not found
         return;
     }
 
@@ -5760,12 +6020,20 @@ async function renderOrderDetailPage(orderId) {
         const product = allProducts.find(p => p.id === item.productId);
         const imageUrl = item.isCustom ? 'assets/images/custom_hamper_placeholder.jpg' : (product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A');
         const componentsHtml = (item.isCustom && item.contents) ? `<ul class="order-detail-components">${item.contents.map(c => `<li>- ${c.name} (x${c.quantity})</li>`).join('')}</ul>` : '';
+        // ADDED (2026-08-09): show cancelled quantity per item now that
+        // api/admin-orders.js's cancel action actually records it -- previously
+        // a partial cancellation left no visible trace of what was cancelled.
+        const cancelledQty = item.cancelledQuantity || 0;
+        const isFullyCancelled = cancelledQty > 0 && cancelledQty >= item.quantity;
+        const qtyLine = cancelledQty > 0
+            ? `<p>Qty: ${item.quantity} <span style="color:#b91c1c;">(${cancelledQty} cancelled)</span></p>`
+            : `<p>Qty: ${item.quantity}</p>`;
         return `
-            <div class="order-summary-item">
+            <div class="order-summary-item"${isFullyCancelled ? ' style="opacity:0.6;"' : ''}>
                 <img src="${imageUrl}" alt="${item.title}" class="cart-item-image">
                 <div class="cart-item-info">
                     <p class="cart-item-title">${item.title}</p>
-                    <p>Qty: ${item.quantity}</p>
+                    ${qtyLine}
                     ${componentsHtml}
                 </div>
                 <span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span>
@@ -5820,7 +6088,17 @@ async function renderOrderDetailPage(orderId) {
         cancelLink.addEventListener('click', (e) => { e.preventDefault(); cancelLink.style.display = 'none'; activateCancellationMode(order); }, { once: true });
     }
 
-    const returnWindow = appConfig?.returns?.returnWindowInDays ?? 28;
+    // FIX (2026-08-11): this used to read appConfig.returns.returnWindowInDays
+    // -- the static, non-admin-editable public/data/config.json file -- so
+    // the "Need to return an item?" link's visibility never actually
+    // respected the admin's Return Window (Days) setting. Confirmed live:
+    // changed the admin setting to 45, this gate stayed hardcoded at the
+    // config.json default of 28, hiding the return link 17 days before the
+    // server-side check (api/returns.js, which correctly reads the admin
+    // setting) would actually reject the return. Now reads window.appSettings
+    // like every other consumer of this setting (see renderMyReturnsPage's
+    // expired-return marking, which already did this correctly).
+    const returnWindow = window.appSettings?.returnWindowInDays ?? 28;
     const daysSinceOrder = (new Date() - orderDateObj) / (1000 * 3600 * 24);
     const hasReturnableItems = order.items && order.items.some(orderItem => {
         const returnedQty = userReturns
@@ -5849,22 +6127,38 @@ function activateCancellationMode(order) {
     const itemsContainer = document.querySelector('#page-order-detail .order-detail-items');
     if (!itemsContainer) return;
 
+    // ADDED (2026-08-09): use remaining (not original) quantity now that
+    // cancellations can happen in more than one pass and record
+    // `cancelledQuantity` per item -- previously re-opening this form after a
+    // partial cancellation would let you "cancel" the same item's full
+    // original quantity again, over-counting (the server now clamps this
+    // defensively too, but the UI shouldn't offer it in the first place).
+    // Items with nothing left to cancel are shown disabled instead of with a
+    // checkbox, mirroring the "✓ Item (Already Returned/Returning)" pattern
+    // used on the returns form.
+    const cancellableItems = order.items.filter(item => (item.quantity - (item.cancelledQuantity || 0)) > 0);
+
     const itemsWithCheckboxesHtml = order.items.map(item => {
         const product = allProducts.find(p => p.id === item.productId);
         const imageUrl = item.isCustom ? 'assets/images/custom_hamper_placeholder.jpg' : (product ? getProductImageUrls(product)[0] : 'https://placehold.co/80x80/f3f4f6/9ca3af?text=N/A');
-        
+        const remaining = item.quantity - (item.cancelledQuantity || 0);
+
+        if (remaining <= 0) {
+            return `<div class="order-summary-item" style="opacity:0.6;"><p>✓ <em>${item.title} (Already Cancelled)</em></p></div>`;
+        }
+
         // --- RULE 1 IS IMPLEMENTED HERE ---
-        // The checkbox is now only created if there is more than one item in the order.
-        const checkboxHtml = order.items.length > 1
-            ? `<div class="cancellation-control"><input type="checkbox" name="cancel-item" value="${item.productId}" data-quantity="${item.quantity}"></div>`
+        // The checkbox is only created if there is more than one cancellable item.
+        const checkboxHtml = cancellableItems.length > 1
+            ? `<div class="cancellation-control"><input type="checkbox" name="cancel-item" value="${item.productId}" data-quantity="${remaining}"></div>`
             : '';
 
         return `
             <div class="order-summary-item">
                 ${checkboxHtml}
                 <img src="${imageUrl}" alt="${item.title}" class="cart-item-image">
-                <div class="cart-item-info"><p class="cart-item-title">${item.title}</p><p>Qty: ${item.quantity}</p></div>
-                <span class="cart-item-price">£${(item.price * item.quantity).toFixed(2)}</span>
+                <div class="cart-item-info"><p class="cart-item-title">${item.title}</p><p>Qty: ${remaining}${item.cancelledQuantity ? ` (of ${item.quantity})` : ''}</p></div>
+                <span class="cart-item-price">£${(item.price * remaining).toFixed(2)}</span>
             </div>`;
     }).join('');
 
@@ -5884,7 +6178,7 @@ function activateCancellationMode(order) {
     const returnLink = document.getElementById('show-return-form-btn');
     const allCheckboxes = itemsContainer.querySelectorAll('input[name="cancel-item"]');
 
-    if (order.items.length === 1) {
+    if (cancellableItems.length === 1) {
         if(cancelSelectedBtn) cancelSelectedBtn.style.display = 'none';
     }
 
@@ -5946,8 +6240,10 @@ function renderAddressForm(addressToEdit) {
                 <div class="form-group"><label for="fullName">Full Name</label><input type="text" id="fullName" value="${isEditing ? addressToEdit.fullName : ''}" required></div>
                 <div class="form-group"><label for="addressLine1">Address Line 1</label><input type="text" id="addressLine1" value="${isEditing ? addressToEdit.addressLine1 : ''}" required></div>
                 <div class="form-group"><label for="addressLine2">Address Line 2 (Optional)</label><input type="text" id="addressLine2" value="${isEditing && addressToEdit.addressLine2 ? addressToEdit.addressLine2 : ''}"></div>
-                <div class="form-group"><label for="city">Town / City</label><input type="text" id="city" value="${isEditing ? addressToEdit.city : ''}" required></div>
-                <div class="form-group"><label for="postcode">Postcode</label><input type="text" id="postcode" value="${isEditing ? addressToEdit.postcode : ''}" required></div>
+                <div class="form-group-row">
+                    <div class="form-group"><label for="city">Town / City</label><input type="text" id="city" value="${isEditing ? addressToEdit.city : ''}" required></div>
+                    <div class="form-group"><label for="postcode">Postcode</label><input type="text" id="postcode" value="${isEditing ? addressToEdit.postcode : ''}" required></div>
+                </div>
                 <div class="form-group"><label for="country">Country</label><input type="text" id="country" value="${isEditing ? addressToEdit.country : 'UK'}" required></div>
                 <div class="form-group form-group-checkbox"><input type="checkbox" id="isDefault" ${isEditing && addressToEdit.isDefault ? 'checked' : ''}><label for="isDefault">Set as default</label></div>
                 <button type="submit" id="save-address-btn" class="btn btn-primary btn-full-width">
@@ -6588,7 +6884,8 @@ async function fetchSiteSettings() {
         window.appSettings = settingsData; 
         
         // Apply CSS variables immediately for colors and fonts
-        applyCssVariables(settingsData); 
+        applyCssVariables(settingsData);
+        applyHeroBanner(settingsData);
         const thresholdEl = document.getElementById('top-bar-threshold');
         if (thresholdEl) {
             const symbol = settingsData.baseCurrencySymbol || '£';
@@ -6604,6 +6901,29 @@ async function fetchSiteSettings() {
             baseDeliveryCharge: 4.99,
             // Add other defaults as necessary
         };
+    }
+}
+
+// ADDED (2026-08-11): renders the homepage hero banner from Site Settings
+// (heroMediaType/heroImageUrl/heroVideoUrl) into #hero-media-container --
+// see the matching .hero-media markup/CSS. Falls back to the same image
+// path the CSS used to hardcode if nothing is configured yet, so existing
+// sites see no change until an admin edits this in Site Settings. 'video'
+// mode still needs a non-empty heroVideoUrl to actually use a <video> --
+// an admin can select "Video" but leave the URL blank without breaking
+// the banner, it just falls back to the image.
+function applyHeroBanner(settings) {
+    const container = document.getElementById('hero-media-container');
+    if (!container) return; // page-detail/other routes don't have a hero
+
+    const mediaType = settings.heroMediaType || 'image';
+    const imageUrl = settings.heroImageUrl || 'assets/images/hero_main_banner.jpg';
+    const videoUrl = settings.heroVideoUrl || '';
+
+    if (mediaType === 'video' && videoUrl) {
+        container.innerHTML = `<video autoplay muted loop playsinline src="${videoUrl}"></video>`;
+    } else {
+        container.innerHTML = `<img src="${imageUrl}" alt="">`;
     }
 }
 function formatCurrency(amount) {

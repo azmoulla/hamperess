@@ -1,6 +1,7 @@
 // FILE: api/user-profile.js
 import admin from 'firebase-admin';
 import { db } from './_lib/firebase-admin-helper.js';
+import { sendWelcomeEmail } from './_lib/brevo-helper.js';
 
 // --- HELPERS ---
 async function getVerifiedUid(req) {
@@ -97,12 +98,53 @@ export default async function handler(req, res) {
 
             // --- SAVE CART ---
             if (req.method === 'POST') {
-                const { cart } = req.body;
+                const { cart, cartExpires } = req.body;
                 if (!Array.isArray(cart)) return res.status(400).json({ error: 'Invalid cart data.' });
+                // ADDED (2026-08-11): cartExpires mirrors the expiry timestamp
+                // saveCart() already computes for the localStorage copy
+                // (now + admin's Cart Persistence (Days) setting). Previously
+                // this endpoint only ever stored the raw cart array with no
+                // expiry at all, so a logged-in user's cart would survive
+                // forever server-side and get merged back in on every login
+                // regardless of the admin's setting -- confirmed live via a
+                // direct expired-cart test. See auth.js's onAuthStateChanged
+                // merge logic, which now checks this field before honoring
+                // the remote cart.
+                const updatePayload = { cart };
+                if (cartExpires) updatePayload.cartExpires = cartExpires;
                 // Use set with merge to avoid destroying address/profile data
-                await userRef.set({ cart }, { merge: true });
+                await userRef.set(updatePayload, { merge: true });
                 return res.status(200).json({ success: true, message: 'Cart saved.' });
             }
+        }
+
+        // ==========================================
+        // WELCOME EMAIL (first-time social sign-ins -- see public/auth.js
+        // _socialLogin()). Server-side idempotency guard via a
+        // `welcomeEmailSent` flag on the user doc, set inside a
+        // transaction before the email is sent -- protects against a
+        // double-call (e.g. a double-click on the social button) firing
+        // two welcome emails, since the client-side "!userDoc.exists"
+        // check alone isn't atomic.
+        // ==========================================
+        if (type === 'welcome-email' && req.method === 'POST') {
+            const alreadySent = await db.runTransaction(async (transaction) => {
+                const doc = await transaction.get(userRef);
+                if (doc.exists && doc.data().welcomeEmailSent) return true;
+                transaction.set(userRef, { welcomeEmailSent: true }, { merge: true });
+                return false;
+            });
+
+            if (alreadySent) return res.status(200).json({ success: true, skipped: true });
+
+            const userDoc = await userRef.get();
+            const userData = userDoc.data() || {};
+            try {
+                await sendWelcomeEmail(userData.name || userData.email || 'there', userData.email);
+            } catch (emailError) {
+                console.error(`Welcome email failed for uid ${uid}:`, emailError.message);
+            }
+            return res.status(200).json({ success: true });
         }
 
         return res.status(400).json({ error: 'Invalid type parameter.' });

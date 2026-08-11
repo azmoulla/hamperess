@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Luxury Hampers - Admin Panel</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="admin.css">
+    <link rel="stylesheet" href="admin.css?v=CTXFIX1">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
@@ -32,7 +32,7 @@
             </div>
         </div>
         
-        <div id="cancel-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center">
+        <div id="cancel-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center" style="z-index: 100;">
             <div class="relative mx-auto p-5 border w-full max-w-lg shadow-lg rounded-md bg-white">
                 <div class="mt-3 text-center">
                     <h3 class="text-lg leading-6 font-medium text-gray-900" id="cancel-modal-title">Cancel Order</h3>
@@ -59,6 +59,46 @@
                     <div class="items-center px-4 py-3 space-x-2 text-right">
                         <button id="modal-cancel-btn" class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto hover:bg-gray-300">Cancel</button>
                         <button id="modal-generate-btn" class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md w-auto hover:bg-blue-700">Generate Voucher</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="refund-paypal-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 h-full w-full flex items-center justify-center" style="z-index: 120;">
+            <div class="relative mx-auto p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
+                <div class="mt-3">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 text-center">Refund via PayPal</h3>
+                    <div class="mt-4 px-4 py-3">
+                        <p class="text-sm text-gray-600 mb-4">Refunding return <strong id="paypal-refund-return-id"></strong> for customer <strong id="paypal-refund-customer-email"></strong> back to their original PayPal payment. This sends real money and cannot be undone.</p>
+                        <label for="paypal-refund-value-input" class="block text-sm font-medium text-gray-700">Refund Amount (£)</label>
+                        <input type="number" id="paypal-refund-value-input" step="0.01" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                        <input type="hidden" id="paypal-refund-hidden-return-path">
+                    </div>
+                    <div id="paypal-refund-modal-spinner" class="hidden justify-center items-center py-4"><div class="spinner"></div></div>
+                    <div class="items-center px-4 py-3 space-x-2 text-right">
+                        <button id="paypal-refund-modal-cancel-btn" class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto hover:bg-gray-300">Cancel</button>
+                        <button id="paypal-refund-modal-confirm-btn" class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md w-auto hover:bg-blue-700">Send Refund</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="manual-refund-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 h-full w-full flex items-center justify-center" style="z-index: 120;">
+            <div class="relative mx-auto p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
+                <div class="mt-3">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 text-center">Mark as Manually Refunded</h3>
+                    <div class="mt-4 px-4 py-3">
+                        <p class="text-sm text-gray-600 mb-4">Logging a refund already issued outside this system (card reader terminal, bank transfer, etc.) for order <strong id="manual-refund-order-id"></strong>, customer <strong id="manual-refund-customer-email"></strong>. This does <u>not</u> move any money -- it only records that the refund happened.</p>
+                        <label for="manual-refund-value-input" class="block text-sm font-medium text-gray-700">Refund Amount (£)</label>
+                        <input type="number" id="manual-refund-value-input" step="0.01" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                        <label for="manual-refund-reference-input" class="block text-sm font-medium text-gray-700 mt-3">Reference / Reason (optional)</label>
+                        <input type="text" id="manual-refund-reference-input" placeholder="e.g. terminal receipt #1234" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                        <input type="hidden" id="manual-refund-hidden-order-id">
+                    </div>
+                    <div id="manual-refund-modal-spinner" class="hidden justify-center items-center py-4"><div class="spinner"></div></div>
+                    <div class="items-center px-4 py-3 space-x-2 text-right">
+                        <button id="manual-refund-modal-cancel-btn" class="px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-auto hover:bg-gray-300">Cancel</button>
+                        <button id="manual-refund-modal-confirm-btn" class="px-4 py-2 bg-gray-700 text-white text-base font-medium rounded-md w-auto hover:bg-gray-800">Log Refund</button>
                     </div>
                 </div>
             </div>
@@ -184,6 +224,22 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t">
+                                <div>
+                                    <h3 class="font-semibold text-gray-700 mb-2">Customer Details</h3>
+                                    <div class="space-y-3">
+                                        <div><label for="customer-name" class="block text-sm font-medium text-gray-600">Full Name</label><input type="text" id="customer-name" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></div>
+                                        <div><label for="customer-email" class="block text-sm font-medium text-gray-600">Email</label><input type="email" id="customer-email" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h3 class="font-semibold text-gray-700 mb-2">Delivery Address</h3>
+                                    <div class="space-y-3">
+                                        <div><label for="delivery-address" class="block text-sm font-medium text-gray-600">Address Line 1</label><input type="text" id="delivery-address" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></div>
+                                        <div><label for="delivery-postcode" class="block text-sm font-medium text-gray-600">Postcode</label><input type="text" id="delivery-postcode" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></div>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
                                 <div>
                                     <h3 class="font-semibold text-gray-700 mb-2">Discount Code</h3>
@@ -257,6 +313,67 @@
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div class="form-group"><label for="setting-font-headings">Font Family (Headings)</label><input type="text" id="setting-font-headings" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></div>
                                     <div class="form-group"><label for="setting-font-body">Font Family (Body)</label><input type="text" id="setting-font-body" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"></div>
+                                </div>
+
+                                <h3 class="text-xl font-semibold border-b pb-2">Homepage Hero Banner</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="form-group">
+                                        <label for="setting-hero-media-type">Banner Type</label>
+                                        <select id="setting-hero-media-type" class="w-full mt-1 px-3 py-2 border rounded-md">
+                                            <option value="image">Image</option>
+                                            <option value="video">Video</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="form-group" id="setting-hero-image-group">
+                                        <label for="setting-hero-image-url">Banner Image URL</label>
+                                        <input type="text" id="setting-hero-image-url" placeholder="assets/images/hero_main_banner.jpg" class="w-full mt-1 px-3 py-2 border rounded-md">
+                                    </div>
+                                    <div class="form-group hidden" id="setting-hero-video-group">
+                                        <label for="setting-hero-video-url">Banner Video URL (.mp4)</label>
+                                        <input type="text" id="setting-hero-video-url" placeholder="https://.../banner.mp4" class="w-full mt-1 px-3 py-2 border rounded-md">
+                                        <p class="text-xs text-gray-500 mt-1">Plays muted, looped, no controls -- like a moving background photo. Paste a direct link to an .mp4 file (not a YouTube/Vimeo page link).</p>
+                                    </div>
+                                </div>
+
+                                <h3 class="text-xl font-semibold border-b pb-2">Homepage Unboxing Promo</h3>
+                                <p class="text-sm text-gray-500 -mt-4">A promo card injected into the product grid every 10th item.</p>
+                                <div class="form-group flex items-center pt-2">
+                                    <input type="checkbox" id="setting-unboxing-enabled" class="h-4 w-4">
+                                    <label for="setting-unboxing-enabled" class="ml-2">Show Unboxing Promo Card</label>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="form-group">
+                                        <label for="setting-unboxing-media-type">Media Type</label>
+                                        <select id="setting-unboxing-media-type" class="w-full mt-1 px-3 py-2 border rounded-md">
+                                            <option value="image">Image</option>
+                                            <option value="video">Video</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="form-group hidden" id="setting-unboxing-image-group">
+                                        <label for="setting-unboxing-image-url">Promo Image URL</label>
+                                        <input type="text" id="setting-unboxing-image-url" placeholder="https://.../image.jpg" class="w-full mt-1 px-3 py-2 border rounded-md">
+                                    </div>
+                                    <div class="form-group" id="setting-unboxing-video-group">
+                                        <label for="setting-unboxing-video-url">Promo Video URL (.mp4)</label>
+                                        <input type="text" id="setting-unboxing-video-url" placeholder="https://.../promo.mp4" class="w-full mt-1 px-3 py-2 border rounded-md">
+                                    </div>
+                                    <div class="form-group" id="setting-unboxing-poster-group">
+                                        <label for="setting-unboxing-poster-url">Video Poster Image URL</label>
+                                        <input type="text" id="setting-unboxing-poster-url" placeholder="https://.../poster.jpg" class="w-full mt-1 px-3 py-2 border rounded-md">
+                                        <p class="text-xs text-gray-500 mt-1">Shown briefly while the video loads.</p>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="form-group"><label for="setting-unboxing-tag">Eyebrow Tag</label><input type="text" id="setting-unboxing-tag" class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                    <div class="form-group"><label for="setting-unboxing-title">Title</label><input type="text" id="setting-unboxing-title" class="w-full mt-1 px-3 py-2 border rounded-md"></div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="setting-unboxing-description">Description</label>
+                                    <textarea id="setting-unboxing-description" rows="2" class="w-full mt-1 px-3 py-2 border rounded-md"></textarea>
                                 </div>
 
                                 <h3 class="text-xl font-semibold border-b pb-2">UX & Stock Behavior</h3>
@@ -515,9 +632,22 @@
                                     <input type="text" id="contact-us-subtitle" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
                                 </div>
                             </div>
+                            <!-- FIX (2026-08-11): replaced the old "Map Image Path" field
+                                 (a static image file someone had to source/upload, which is
+                                 how a screenshot of the wrong city -- Liverpool -- ended up
+                                 labelled as the London map, with no way to fix the zoom/area
+                                 shown short of finding a new image) with a real embedded,
+                                 interactive Google Map driven by an address search query +
+                                 zoom level. No API key needed (uses the public
+                                 maps.google.com/maps?...&output=embed endpoint); admins can
+                                 now actually control what the map shows. -->
                             <div class="form-group">
-                                <label for="contact-us-map-path" class="block text-sm font-medium text-gray-700 mb-1">Map Image Path (relative to assets)</label>
-                                <input type="text" id="contact-us-map-path" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., images/map_placeholder.png">
+                                <label for="contact-us-map-query" class="block text-sm font-medium text-gray-700 mb-1">Map Address / Search Query</label>
+                                <input type="text" id="contact-us-map-query" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., 123 Rushdene Lane, South Kensington, London SW7 1DT">
+                            </div>
+                            <div class="form-group">
+                                <label for="contact-us-map-zoom" class="block text-sm font-medium text-gray-700 mb-1">Map Zoom Level (1-20, higher = closer)</label>
+                                <input type="number" id="contact-us-map-zoom" min="1" max="20" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., 15">
                             </div>
 
                             <hr class="border-gray-300">
@@ -818,26 +948,16 @@
                                 <label for="product-category-input" class="block text-sm font-medium text-gray-700">Category</label>
                                 <input type="text" id="product-category-input" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div class="form-group">
-    <label for="product-tag" class="block text-sm font-medium text-gray-700">Tag (e.g., BESTSELLER, SALE)</label>
-    <input type="text" id="product-tag" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="Single tag">
-</div>
+                            <div class="form-group">
+                                <label for="product-tag" class="block text-sm font-medium text-gray-700">Tag (e.g., BESTSELLER, SALE)</label>
+                                <input type="text" id="product-tag" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="Single tag">
+                            </div>
+                        </div>
 
-<div class="form-group">
-    <label for="product-dietary-tags" class="block text-sm font-medium text-gray-700">Dietary Tags (comma-separated)</label>
-    <input type="text" id="product-dietary-tags" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g. Vegan, Gluten Free">
-</div>
-
-<div class="form-group">
-    <label for="product-occasion-tags" class="block text-sm font-medium text-gray-700">Occasion Tags (comma-separated)</label>
-    <input type="text" id="product-occasion-tags" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g. Birthday, Anniversary">
-</div>
-
-<div class="form-group">
-    <label for="product-contents-tags" class="block text-sm font-medium text-gray-700">Contents Tags (comma-separated)</label>
-    <input type="text" id="product-contents-tags" class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g. Alcohol, Chocolate">
-</div>
+                        <div class="form-group">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Dietary / Occasion / Contents Tags</label>
+                            <p class="text-xs text-gray-400 mb-2">Picked from Search Tags (admin) -- keeps product tags in sync with the chip filters shoppers see.</p>
+                            <div id="product-tags-container" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
                         </div>
                         
                         <div>
@@ -907,7 +1027,7 @@
         <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
         <script src="firebase-config.js"></script> 
         
-        <script type="module" src="admin.js?v=1010"></script>
+        <script type="module" src="admin.js?v=1028"></script>
         
 
         <div id="packing-slip-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 p-4">

@@ -2,6 +2,8 @@
 import admin from 'firebase-admin';
 import { db, verifyAdmin } from './_lib/firebase-admin-helper.js';
 import { sendVoucherEmail } from './_lib/email-helper.js';
+import { refundPayPalCapture } from './_lib/paypal-helper.js';
+import { sendRefundConfirmationEmail } from './_lib/brevo-helper.js';
 
 // --- HELPERS ---
 function generateUniqueCode() {
@@ -37,6 +39,24 @@ function csvToArray(value) {
     if (Array.isArray(value)) return value.map(v => String(v).trim()).filter(Boolean);
     if (!value) return [];
     return String(value).split(',').map(v => v.trim()).filter(Boolean);
+}
+
+// FIX (2026-08-09): admin-created discount codes (percent/fixed/shipping)
+// never had a `description` field set at all -- only store_credit codes did
+// (see the GET ?code= handler below). public/app.js's applyDiscount() and
+// public/admin.js's POS discount handler both render
+// `Success: "${discountData.description}" applied!`, so every admin-created
+// discount code showed the literal text "undefined" there. Confirmed live
+// both at customer checkout and via the POS screen. Synthesizing a
+// human-readable description here (used by both create and update below)
+// fixes it at the source going forward; see the frontend fallback in
+// app.js/admin.js for codes created before this fix.
+function generateDiscountDescription(type, value) {
+    const numericValue = Number(value) || 0;
+    if (type === 'percent') return `${numericValue}% off`;
+    if (type === 'fixed') return `£${numericValue.toFixed(2)} off`;
+    if (type === 'shipping') return 'Free shipping';
+    return 'Discount applied';
 }
 
 // Checks the constraints that DON'T require cart/customer context (date
@@ -184,6 +204,7 @@ export default async function handler(req, res) {
                     code: upperCode,
                     type: discountType,
                     value: Number(discountValue) || 0,
+                    description: generateDiscountDescription(discountType, discountValue),
                     isActive: true,
                     creationDate: admin.firestore.FieldValue.serverTimestamp(),
                     startDate: startDate || null,
@@ -230,6 +251,7 @@ export default async function handler(req, res) {
                 await discountRef.update({
                     type: discountType,
                     value: Number(discountValue) || 0,
+                    description: generateDiscountDescription(discountType, discountValue),
                     startDate: startDate || null,
                     endDate: endDate || null,
                     maxUses: (maxUses !== undefined && maxUses !== null && maxUses !== '') ? Number(maxUses) : null,
@@ -248,6 +270,65 @@ export default async function handler(req, res) {
                 if (!id) return res.status(400).json({ error: 'Discount id is required.' });
                 await db.collection('discounts').doc(id).update({ isActive: !!isActive });
                 return res.status(200).json({ success: true });
+            }
+
+            // --- ADDED (2026-08-09): Refund a return via PayPal (real money
+            // back to the original payment method) instead of/alongside
+            // Issue Credit (store credit). Only usable when the original
+            // order was actually paid through PayPal -- everything else
+            // (POS/"External Card Reader", the unpaid "Card" checkout path)
+            // has no gateway to call, so those returns still only ever get
+            // Issue Credit. Mirrors Issue Credit's pattern of stamping the
+            // return status and letting the admin confirm/edit the exact
+            // amount before it fires (see public/admin.js's modal).
+            if (req.body.kind === 'refund-paypal') {
+                const { returnPath, amount } = req.body;
+                if (!returnPath || !(Number(amount) > 0)) {
+                    return res.status(400).json({ error: 'Return path and a positive amount are required.' });
+                }
+
+                const returnDocRef = db.doc(returnPath);
+                const returnDoc = await returnDocRef.get();
+                if (!returnDoc.exists) return res.status(404).json({ error: 'Return document not found.' });
+                const returnData = returnDoc.data();
+
+                const orderQuery = await db.collection('orders').where('id', '==', returnData.orderId).limit(1).get();
+                if (orderQuery.empty) return res.status(404).json({ error: 'Original order not found.' });
+                const orderDoc = orderQuery.docs[0];
+                const orderData = orderDoc.data();
+
+                if (orderData.paymentMethod !== 'PayPal' || !orderData.transactionId) {
+                    return res.status(400).json({ error: 'This order has no PayPal payment to refund -- please refund manually.' });
+                }
+
+                const refundAmount = Number(amount);
+
+                try {
+                    const refundResult = await refundPayPalCapture(orderData.transactionId, refundAmount);
+                    await db.runTransaction(async (transaction) => {
+                        transaction.update(returnDocRef, { status: `Completed (Refunded: £${refundAmount.toFixed(2)} via PayPal)` });
+                        transaction.update(orderDoc.ref, {
+                            refunds: admin.firestore.FieldValue.arrayUnion({
+                                amount: refundAmount, date: new Date(), orderId: orderDoc.id, status: 'completed',
+                                paypalRefundId: refundResult.id, triggeredBy: 'admin_return_refund', returnId: returnData.id
+                            })
+                        });
+                    });
+                    if (orderData.customerEmail) {
+                        try {
+                            await sendRefundConfirmationEmail(
+                                { id: orderDoc.id, customerName: orderData.customerName, customerEmail: orderData.customerEmail },
+                                refundAmount
+                            );
+                        } catch (emailError) {
+                            console.error(`Return ${returnData.id} refunded OK, but refund confirmation email failed:`, emailError.message);
+                        }
+                    }
+                    return res.status(200).json({ success: true, message: `Refunded £${refundAmount.toFixed(2)} via PayPal.` });
+                } catch (refundError) {
+                    console.error(`PayPal refund failed for return ${returnData.id}:`, refundError.message);
+                    return res.status(500).json({ error: `PayPal refund failed: ${refundError.message}` });
+                }
             }
 
             // --- (Replaces generate-store-credit.js) ---

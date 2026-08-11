@@ -308,6 +308,17 @@ export async function createOrderTransaction({ orderPayload, uid, paymentMethod,
             paymentStatus: paymentStatus || 'paid',
             ...(paymentMethod ? { paymentMethod } : {}),
             ...(transactionId ? { transactionId } : {}),
+            // ADDED (2026-08-10): every order-creation path used to be
+            // distinguishable only indirectly (userId null-ness, item
+            // schema shape, presence/absence of paymentMethod) -- none of
+            // which is fully reliable (a guest checkout also has
+            // userId: null, same as POS). Stamping an explicit, unambiguous
+            // source field instead. This function is only ever called from
+            // the customer-facing checkout paths (api/orders.js's no-payment
+            // "Card" flow, api/paypal.js after a real capture) -- never from
+            // the POS/admin order-creation endpoint, which sets its own
+            // 'pos' value directly in api/admin-orders.js.
+            orderSource: 'online',
             orderDate: admin.firestore.FieldValue.serverTimestamp()
         });
     });

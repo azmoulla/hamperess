@@ -11,7 +11,7 @@
          /products/some-slug) instead of the site root -- breaking on any
          hard reload/direct load of a non-home route. -->
     <base href="/">
-    <link rel="stylesheet" href="style.css?v=harrods-gallery-10">
+    <link rel="stylesheet" href="style.css?v=harrods-gallery-20">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
     <meta name="theme-color" content="#ffffff"/>
@@ -65,7 +65,12 @@
     <div class="header-contact-bar">
         <span>Free UK Delivery on orders over <span id="top-bar-threshold">£50</span></span>
         <div class="contact-details">
-            <a href="tel:01234567890"><i class="fas fa-phone"></i> 01234 567890</a>
+            <!-- FIX (2026-08-11): this was hardcoded to a placeholder number
+                 (01234 567890) that never matched the real business number
+                 shown everywhere else on the site (Contact Us page, footer:
+                 01666 567890). Corrected to match; this bar has no
+                 admin-configurable source at all, so it's a static edit here. -->
+            <a href="tel:01666567890"><i class="fas fa-phone"></i> 01666 567890</a>
             <a href="mailto:sales@luxuryhampers.com"><i class="fas fa-envelope"></i> sales@luxuryhampers.com</a>
         </div>
     </div>
@@ -101,12 +106,33 @@
         </div>
         
         <main>
-            <div id="page-list">
+            <!-- FIX (2026-08-11): page-list was the only page container with no
+                 default display:none, unlike every sibling page (page-static,
+                 page-checkout, page-login, etc., all hidden by default and only
+                 shown via showPage()). This meant any hard/direct page load of a
+                 non-home route (e.g. /privacy-policy) would flash the fully-
+                 rendered homepage first, since it was visible by default while
+                 the router's own content fetch for the real target page was
+                 still in flight. showAllProducts() (the '/' route handler)
+                 already explicitly calls showPage('list') to reveal this, so
+                 hiding it by default matches every other page and is safe --
+                 confirmed live: no more homepage flash on hard-loading a static
+                 route, homepage itself still renders correctly via routing. -->
+            <div id="page-list" style="display: none;">
                 
                 <section class="hero">
-                    <h1>Exquisite Hampers for Every Occasion</h1>
-                    <p>Discover our curated collection of luxury food and wine hampers, crafted with passion and care.</p>
-                    <button id="hero-shop-now-btn" class="btn btn-primary" style="margin-top: 1.5rem;">Shop Now</button>
+                    <!-- ADDED (2026-08-11): image/video injected here by
+                         applyHeroBanner() in app.js, based on Site Settings
+                         (heroMediaType/heroImageUrl/heroVideoUrl). Was a
+                         hardcoded CSS background-image before -- see the
+                         .hero-media/.hero-overlay rules in input.css. -->
+                    <div class="hero-media" id="hero-media-container"></div>
+                    <div class="hero-overlay"></div>
+                    <div class="hero-content">
+                        <h1>Exquisite Hampers for Every Occasion</h1>
+                        <p>Discover our curated collection of luxury food and wine hampers, crafted with passion and care.</p>
+                        <button id="hero-shop-now-btn" class="btn btn-primary" style="margin-top: 1.5rem;">Shop Now</button>
+                    </div>
                 </section>
         
                 <section id="features-bar" class="features-bar"></section>
@@ -307,10 +333,10 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
-    <script src="firebase-config.js?v=PAYPAL11"></script>
-    <script src="auth.js?v=SOCIAL1"></script>
+    <script src="firebase-config.js?v=PAYPAL12"></script>
+    <script src="auth.js?v=SOCIAL3"></script>
     <script src="wishlist.js"></script>
-    <script src="app.js?v=CHIPS2"></script>
+    <script src="app.js?v=CHIPS25"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-analytics-compat.js"></script>
 
 </body>

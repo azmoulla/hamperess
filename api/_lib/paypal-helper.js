@@ -118,6 +118,45 @@ export async function capturePayPalOrder(paypalOrderId) {
 }
 
 /**
+ * Refunds (fully or partially) a previously-captured PayPal payment. Used by
+ * order cancellations and return refunds (2026-08-09) -- both call this with
+ * the order's stored `transactionId` (the capture id PayPal returned back in
+ * capturePayPalOrder()) and an amount that must be <= the original capture
+ * amount. PayPal supports multiple partial refunds against the same capture
+ * as long as the running total doesn't exceed what was captured, so this is
+ * safe to call more than once for the same order (e.g. two separate partial
+ * cancellations).
+ * @param {string} captureId - PayPal capture id, i.e. order.transactionId
+ * @param {number} amount - GBP amount to refund, e.g. 12.99
+ */
+export async function refundPayPalCapture(captureId, amount) {
+    if (process.env.PAYPAL_MOCK === 'true') {
+        console.log(`PAYPAL_MOCK is active: Simulating refund of £${amount.toFixed(2)} against capture ${captureId}`);
+        return { id: `MOCK-REFUND-${Date.now()}`, status: 'COMPLETED' };
+    }
+
+    const accessToken = await getAccessToken();
+    const response = await fetch(`${getBaseUrl()}/v2/payments/captures/${captureId}/refund`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            amount: { value: amount.toFixed(2), currency_code: 'GBP' }
+        })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+        console.error('PayPal refund failed. Full response:', JSON.stringify(data, null, 2));
+        const detail = data.details?.map(d => `${d.issue}${d.description ? ': ' + d.description : ''}`).join('; ');
+        throw new Error(`PayPal refund failed: ${detail || data.message || response.status}${data.debug_id ? ` (debug_id: ${data.debug_id})` : ''}`);
+    }
+    return data; // { id, status, amount, ... }
+}
+
+/**
  * Verifies that a webhook POST actually came from PayPal (not spoofed) using
  * PayPal's own /v1/notifications/verify-webhook-signature endpoint -- this is
  * PayPal's documented approach rather than manual crypto verification.
