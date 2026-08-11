@@ -44,10 +44,31 @@ export default async function handler(req, res) {
                 const ordersRef = db.collection('orders');
                 let snapshot;
 
+                // Starts-with matching via Firestore range query: a search term
+                // T matches any indexed value in [T, T + '\uF8FF') -- '\uF8FF' is a
+                // very high Unicode codepoint, so this range covers every string
+                // that begins with T without needing a search service. Lets admins
+                // type a partial Order ID (from the start) or partial email instead
+                // of pasting the whole thing. Order IDs are always stored uppercase
+                // (e.g. "ORD-260806-XZ5CO"), so the term is uppercased to match
+                // regardless of how the admin typed it; email is lowercased since
+                // customerEmail is stored lowercase.
                 if (orderId) {
-                    snapshot = await ordersRef.where('id', '==', orderId).get();
+                    const term = orderId.trim().toUpperCase();
+                    snapshot = await ordersRef
+                        .where('id', '>=', term)
+                        .where('id', '<=', term + '\uF8FF')
+                        .orderBy('id')
+                        .limit(25)
+                        .get();
                 } else if (email) {
-                    snapshot = await ordersRef.where('customerEmail', '==', email).orderBy('orderDate', 'desc').get();
+                    const term = email.trim().toLowerCase();
+                    snapshot = await ordersRef
+                        .where('customerEmail', '>=', term)
+                        .where('customerEmail', '<=', term + '\uF8FF')
+                        .orderBy('customerEmail')
+                        .limit(25)
+                        .get();
                 } else {
                     return res.status(400).json({ error: 'Please provide either an orderId or an email.' });
                 }

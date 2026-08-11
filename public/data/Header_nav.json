@@ -4,7 +4,8 @@
     "linkType": "route",
     "target": "/product-listing",
     "argument": "Bestsellers",
-    "isSale": false
+    "isSale": false,
+    "isBestsellerFilter": true
   },
   {
     "title": "Occasions",

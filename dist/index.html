@@ -4,7 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Luxury Hampers</title>
-    <link rel="stylesheet" href="style.css?v=harrods-gallery-9">
+    <!-- CHANGED (2026-08-08): required for pushState routing (clean URLs).
+         Without this, relative references (stylesheets, scripts, and JS
+         fetch() calls to relative paths like 'data/config.json') resolve
+         against whatever deep path the browser is currently on (e.g.
+         /products/some-slug) instead of the site root -- breaking on any
+         hard reload/direct load of a non-home route. -->
+    <base href="/">
+    <link rel="stylesheet" href="style.css?v=harrods-gallery-10">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
     <meta name="theme-color" content="#ffffff"/>
@@ -301,9 +308,9 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <script src="firebase-config.js?v=PAYPAL11"></script>
-    <script src="auth.js"></script>
+    <script src="auth.js?v=SOCIAL1"></script>
     <script src="wishlist.js"></script>
-    <script src="app.js?v=PAYPAL11"></script>
+    <script src="app.js?v=CHIPS2"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-analytics-compat.js"></script>
 
 </body>

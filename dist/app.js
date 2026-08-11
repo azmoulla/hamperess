@@ -157,9 +157,16 @@ const CLICK_HANDLERS = [
             // button appear completely unresponsive. Routing through
             // router.navigate() here keeps the hash in sync with what's
             // actually on screen, so subsequent navigation works correctly.
+            // CHANGED (2026-08-08): system-filter links (data-system-filter,
+            // set from the isBestsellerFilter/isSale menu-item flags) route
+            // through a dedicated /filter/:tag path instead of /category/:name,
+            // so their behavior is driven by the flag rather than by whatever
+            // text happens to be in data-argument.
             const path = target.dataset.target === '/create-your-own'
                 ? '/create-your-own'
-                : `/category/${encodeURIComponent(target.dataset.argument)}`;
+                : target.dataset.systemFilter
+                    ? `/filter/${encodeURIComponent(target.dataset.systemFilter)}`
+                    : `/category/${encodeURIComponent(target.dataset.argument)}`;
             router.navigate(path);
             return true;
         }
@@ -708,14 +715,18 @@ const router = {
     routes: {},
     currentPath: '',
    init() {
-    // Only listen for hash changes. The initial page render is now correctly
-    // handled after the user data has been fetched.
-    window.addEventListener('hashchange', () => this.handleRouteChange());
+    // CHANGED (2026-08-08): switched from hash-based routing (#/path) to
+    // the History API (pushState) for clean URLs. Browser back/forward now
+    // fires 'popstate' instead of 'hashchange'. The initial page render is
+    // still handled separately after the user data has been fetched (see
+    // the router.handleRouteChange() calls at startup).
+    window.addEventListener('popstate', () => this.handleRouteChange());
 },
     addRoute(path, handler) { this.routes[path] = handler; },
     handleRouteChange() {
-        const path = (window.location.hash.slice(1) || '/').split('?')[0];
+        const path = (window.location.pathname || '/').split('?')[0];
         this.currentPath = path;
+        logPageView(path); // no-ops until cookie consent is granted -- see displayCookieConsent()
         this.loadRoute(path);
     },
     loadRoute(path) {
@@ -748,13 +759,23 @@ const router = {
         }
     },
     navigate(path) {
-        if (window.location.hash.slice(1) !== path) window.location.hash = path;
+        // pushState (unlike setting location.hash) does NOT fire any event on
+        // its own, so we push the new URL then trigger route handling
+        // ourselves -- mirrors the old behavior where setting location.hash
+        // triggered 'hashchange' automatically.
+        if (window.location.pathname !== path) {
+            history.pushState(null, '', path);
+            this.handleRouteChange();
+        }
     }
 };
 
 function defineRoutes() {
     router.addRoute('/', renderHomePage);
     router.addRoute('/category/:name', params => handleMenuClick({ argument: params.name }));
+    // Flag-driven system filters (Bestsellers/Sale/etc.) -- see handleMenuClick's
+    // systemFilter branch and the isBestsellerFilter/isSale menu-item flags.
+    router.addRoute('/filter/:tag', params => handleMenuClick({ systemFilter: params.tag }));
     router.addRoute('/create-your-own', () => handleMenuClick({ target: '/create-your-own' }));
     router.addRoute('/products/:slug', params => showProductDetail(params.slug));
     router.addRoute('/checkout', displayCheckoutPage);
@@ -852,55 +873,14 @@ function initCinematicScroll() {
     });
 
     // --- 3. DYNAMIC CHIP CLICK LISTENER (Event Delegation) ---
-    
-}
-function syncChipVisuals() {
-    const priceSelect = document.getElementById('filter-select');
-    const currentPrice = priceSelect ? priceSelect.value : 'all';
-    
-    document.querySelectorAll('.vibe-chip').forEach(chip => {
-        const val = chip.dataset.filter;
-        let isActive = false;
 
-        // Check Price
-        if (val.startsWith('price-')) {
-            isActive = (val === currentPrice);
-        }
-        // Check Special Tags
-        else if (val === 'BESTSELLER') {
-            isActive = (currentTagFilter === 'BESTSELLER');
-        }
-        else if (val === 'SALE') {
-            isActive = (currentTagFilter === 'SALE');
-        }
-        // Check Sidebar Checkboxes (The Tag Logic)
-        else {
-            const allChecks = Array.from(document.querySelectorAll('.facet-checkbox'));
-            const checkbox = allChecks.find(cb => looseMatch(cb.value, val));
-            
-            if (checkbox && checkbox.checked) {
-                isActive = true;
-            }
-            // Check Category (The Navigation Logic)
-            else if (currentCategoryFilter !== 'all' && looseMatch(currentCategoryFilter, val)) {
-                isActive = true;
-            }
-        }
-
-        // Apply Visual State
-        if (isActive) {
-            chip.classList.add('active');
-            chip.style.borderColor = '#d4af37'; 
-            chip.style.backgroundColor = '#111';
-            chip.style.color = '#fff';
-        } else {
-            chip.classList.remove('active');
-            chip.style.borderColor = ''; 
-            chip.style.backgroundColor = '';
-            chip.style.color = '';
-        }
-    });
 }
+// REMOVED (2026-08-08): syncChipVisuals() was dead code -- never called
+// anywhere. It referenced the legacy singular currentTagFilter variable
+// (would've given wrong results if it ever ran, since the real chip state
+// lives in the currentTagFilters array). renderVibeScroller() already
+// handles active/inactive visual state correctly on every re-render, so
+// this had no replacement need.
 
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -1173,10 +1153,19 @@ window.toggleSidebar = toggleSidebar;
     // Newsletter & Search Listeners
     const newsletterForm = document.getElementById('newsletter-form');
     if (newsletterForm) {
-        newsletterForm.addEventListener('submit', (e) => {
+        newsletterForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('newsletter-email').value;
-            showConfirmationModal(`Thank you for subscribing, ${email}! (This is a demo).`);
+            try {
+                await fetch('/api/newsletter', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, source: 'footer' })
+                });
+            } catch (err) {
+                console.error('Newsletter subscribe error:', err);
+            }
+            showConfirmationModal(`Thank you for subscribing, ${email}!`);
             newsletterForm.reset();
         });
     }
@@ -1313,10 +1302,14 @@ function handleGlobalClick(e) {
     }
 
     // This code ONLY runs if no specific button was clicked above
-    const link = e.target.closest('a[href^="/#"]');
+    // CHANGED (2026-08-08): was 'a[href^="/#"]' under hash-based routing;
+    // internal links now render as plain paths (e.g. "/products/slug"), so
+    // this catches those instead. link.pathname (not getAttribute) is used
+    // since the browser resolves it to a clean absolute path for us.
+    const link = e.target.closest('a[href^="/"]');
     if (link) {
         e.preventDefault();
-        const path = link.hash.slice(1);
+        const path = link.pathname;
         router.navigate(path);
         if (document.getElementById('mobile-nav-overlay')?.classList.contains('active')) {
             closeMobileMenu();
@@ -1350,28 +1343,34 @@ function displayMenu(inputData) {
 
     // --- 2. RENDER ---
     let desktopMenuHtml = '';
-    let mobileMenuHtml = `<a href="/#/account" class="mobile-nav-link-item account-link"><i class="fa-solid fa-user"></i> My Account</a>`;
+    let mobileMenuHtml = `<a href="/account" class="mobile-nav-link-item account-link"><i class="fa-solid fa-user"></i> My Account</a>`;
 
     safeData.forEach(item => {
         const title = item.title || item.name || "Menu Item";
         const saleClass = item.isSale ? 'sale-item' : '';
-        
+
         // --- THIS IS THE MISSING LOGIC YOU NEED ---
-        const arg = item.argument || ''; 
-        const dataAttrs = `data-argument="${arg}" data-target="${item.target || ''}"`;
+        const arg = item.argument || '';
+        // CHANGED (2026-08-08): system-filter items (Bestsellers/Sale) are now
+        // identified by an explicit boolean flag, not by matching the
+        // argument/title text -- so renaming either in the admin menu editor
+        // no longer silently breaks the filter. isSale already existed for
+        // this purpose (reused here); isBestsellerFilter is new.
+        const systemFilterValue = item.isBestsellerFilter ? 'BESTSELLER' : (item.isSale ? 'Sale' : '');
+        const dataAttrs = `data-argument="${arg}" data-target="${item.target || ''}"${systemFilterValue ? ` data-system-filter="${systemFilterValue}"` : ''}`;
         // -----------------------------------------
 
         // Construct Link Target
-        let linkTarget = '/#/';
+        let linkTarget = '/';
         if (item.target) {
-            linkTarget = item.target.startsWith('/') ? `/#${item.target}` : `/#/${item.target}`;
+            linkTarget = item.target.startsWith('/') ? item.target : `/${item.target}`;
         } else if (item.argument) {
-            linkTarget = `/#/category/${item.argument}`;
+            linkTarget = `/category/${item.argument}`;
         }
 
         if (item.isMegaMenu && Array.isArray(item.subMenu) && item.subMenu.length > 0) {
-            const subMenuLinks = item.subMenu.map(subItem => 
-                `<a href="/#/category/${subItem.argument}" class="mega-menu-link" data-argument="${subItem.argument}">${subItem.title}</a>`
+            const subMenuLinks = item.subMenu.map(subItem =>
+                `<a href="/category/${subItem.argument}" class="mega-menu-link" data-argument="${subItem.argument}">${subItem.title}</a>`
             ).join('');
 
             desktopMenuHtml += `
@@ -2116,9 +2115,9 @@ function displayProducts(products, gridElement = document.getElementById('produc
         if (isSearchActive) {
             finalCardHtml = `
                 <div class="product-card list-view" data-product-id="${product.id}" ${styleAttr}>
-                    <div class="list-view-image-wrapper"><a href="/#/products/${productSlug}" class="product-image-link">${imageHtml}</a></div>
+                    <div class="list-view-image-wrapper"><a href="/products/${productSlug}" class="product-image-link">${imageHtml}</a></div>
                     <div class="list-view-info-wrapper">
-                         <a href="/#/products/${productSlug}" class="product-title-link">${titleHtml}</a>
+                         <a href="/products/${productSlug}" class="product-title-link">${titleHtml}</a>
                          ${starRatingHtml}${stockInfoHtml}
                          <div class="product-footer">${priceHtml}${addToBasketBtnHtml}</div>
                     </div>
@@ -2126,9 +2125,9 @@ function displayProducts(products, gridElement = document.getElementById('produc
         } else {
             finalCardHtml = `
                 <div class="product-card" data-product-id="${product.id}" ${styleAttr}>
-                    <a href="/#/products/${productSlug}" class="product-image-link">${imageHtml}</a>
+                    <a href="/products/${productSlug}" class="product-image-link">${imageHtml}</a>
                     <div class="product-info">
-                        <a href="/#/products/${productSlug}" class="product-title-link">${titleHtml}</a>
+                        <a href="/products/${productSlug}" class="product-title-link">${titleHtml}</a>
                         ${starRatingHtml}${stockInfoHtml}
                         <div class="product-footer">${priceHtml}${addToBasketBtnHtml}</div>
                     </div>
@@ -2541,7 +2540,7 @@ function renderRelatedProducts(currentProduct) {
     const cardsHtml = related.map(p => {
         const img = getProductImageUrls(p)[0];
         return `
-            <div class="product-card" onclick="window.location.hash = '/products/${createSlug(p.slug || p.title)}'; setTimeout(() => window.location.reload(), 100);" style="cursor:pointer">
+            <div class="product-card" onclick="window.location.href = '/products/${createSlug(p.slug || p.title)}';" style="cursor:pointer">
                 <img src="${img}" alt="${p.title}" style="width:100%; height:250px; object-fit:cover; margin-bottom:10px;">
                 <div class="p-2">
                     <h4 class="font-bold text-sm mb-1">${p.title}</h4>
@@ -2737,15 +2736,24 @@ function renderReviewsToGrid(reviews, container) {
 
         if (!moreContainer) return;
         const remaining = reviews.length - shown;
+        const buttonsHtml = [];
         if (remaining > 0) {
-            moreContainer.innerHTML = `<button id="load-more-reviews-btn" class="btn btn-outline">See More Reviews (${remaining} more)</button>`;
-            document.getElementById('load-more-reviews-btn').addEventListener('click', () => {
-                shown = Math.min(shown + PAGE_SIZE, reviews.length);
-                draw();
-            });
-        } else {
-            moreContainer.innerHTML = '';
+            buttonsHtml.push(`<button id="load-more-reviews-btn" class="btn btn-outline">See More Reviews (${remaining} more)</button>`);
         }
+        if (shown > PAGE_SIZE) {
+            buttonsHtml.push(`<button id="show-less-reviews-btn" class="btn btn-outline">Show Less</button>`);
+        }
+        moreContainer.innerHTML = buttonsHtml.join(' ');
+
+        document.getElementById('load-more-reviews-btn')?.addEventListener('click', () => {
+            shown = Math.min(shown + PAGE_SIZE, reviews.length);
+            draw();
+        });
+        document.getElementById('show-less-reviews-btn')?.addEventListener('click', () => {
+            shown = PAGE_SIZE;
+            draw();
+            moreContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
     }
 
     draw();
@@ -2889,10 +2897,16 @@ async function fetchDiscounts() {
 
 function handleMenuClick(menuItem) {
     console.log("handleMenuClick triggered with:", menuItem);
-    if (!menuItem || (menuItem.argument === undefined && menuItem.target === undefined)) return;
+    if (!menuItem || (menuItem.argument === undefined && menuItem.target === undefined && menuItem.systemFilter === undefined)) return;
 
     document.querySelectorAll('.nav-links-desktop-item, .mobile-nav-link-item').forEach(l => l.classList.remove('active'));
-    document.querySelectorAll(`a[data-argument="${menuItem.argument}"]`).forEach(l => l.classList.add('active'));
+    // Active-link highlighting: match on data-system-filter for flag-driven
+    // items (no data-argument to match on for those), otherwise data-argument.
+    if (menuItem.systemFilter) {
+        document.querySelectorAll(`a[data-system-filter="${menuItem.systemFilter}"]`).forEach(l => l.classList.add('active'));
+    } else {
+        document.querySelectorAll(`a[data-argument="${menuItem.argument}"]`).forEach(l => l.classList.add('active'));
+    }
 
     document.getElementById('search-input').value = '';
     document.getElementById('filter-select').value = 'all';
@@ -2900,24 +2914,42 @@ function handleMenuClick(menuItem) {
 
     if (menuItem.target === "/create-your-own") {
         currentCategoryFilter = 'all';
-        currentTagFilter = null;
+        currentTagFilters = [];
         selectedCustomItems = []; // <-- THIS IS THE FIX
         fetchCustomHamperItems();
         return;
     }
-    
+
+    // CHANGED (2026-08-08): flag-driven system filter (Bestsellers/Sale/etc.),
+    // routed here via /filter/:tag -- see the isBestsellerFilter/isSale menu
+    // item flags and the click handler above. Checked first so this is what
+    // actually drives real nav-link clicks; the text-matching branch below is
+    // kept only as a compatibility fallback for old /category/Bestsellers-style
+    // links (e.g. if one's bookmarked somewhere) until the flag exists on
+    // every relevant menu item.
+    if (menuItem.systemFilter) {
+        currentTagFilters = [menuItem.systemFilter];
+        currentCategoryFilter = 'all';
+        showPage('list');
+        updateProductView();
+        return;
+    }
+
     const argument = menuItem.argument;
 
     if (argument === '__ALL_PRODUCTS_TRIGGER__') {
         showAllProducts();
     } else if (argument === 'Bestsellers' || argument === 'Special Sale Items') {
-        currentTagFilter = argument === 'Bestsellers' ? 'BESTSELLER' : 'SALE';
+        // Compatibility fallback -- see comment above. Was previously the only
+        // path and was broken (set the legacy singular currentTagFilter, which
+        // updateProductView() no longer reads); fixed 2026-08-08 to use the array.
+        currentTagFilters = [argument === 'Bestsellers' ? 'BESTSELLER' : 'Sale'];
         currentCategoryFilter = 'all';
         showPage('list');
         updateProductView();
     } else {
         currentCategoryFilter = argument;
-        currentTagFilter = null;
+        currentTagFilters = [];
         showPage('list');
         updateProductView();
     }
@@ -2990,7 +3022,7 @@ function updateHeaderIcons() {
     // --- THIS IS THE FIX ---
     // The account icon is now wrapped in a proper router link
     headerIconsContainer.innerHTML = `
-        <a href="/#/account" class="account-link-wrapper" aria-label="My Account">
+        <a href="/account" class="account-link-wrapper" aria-label="My Account">
             <div class="account-icon-wrapper">
                 <i class="fa-solid fa-user"></i>
                 <span class="account-text">${displayName}</span>
@@ -3318,6 +3350,33 @@ function getDeliveryIconClass(iconName = '') {
 
 // REPLACE the renderLoginPage function in your app.js file with this CORRECT version.
 
+// Shared handler for the "Continue with Google/Facebook" buttons on both
+// the login and register pages -- Firebase's signInWithPopup creates the
+// account automatically if it doesn't exist yet, so one handler covers both.
+async function handleSocialLogin(providerName, buttonEl) {
+    buttonEl.disabled = true;
+    const originalHtml = buttonEl.innerHTML;
+    buttonEl.innerHTML = '<div class="spinner" style="display: inline-block;"></div>';
+
+    const result = providerName === 'google' ? await auth.loginWithGoogle() : await auth.loginWithFacebook();
+
+    if (result.success) {
+        if (postLoginRedirectPath) {
+            router.navigate(postLoginRedirectPath);
+            postLoginRedirectPath = null;
+        } else {
+            router.navigate('/');
+        }
+    } else {
+        buttonEl.disabled = false;
+        buttonEl.innerHTML = originalHtml;
+        // Don't show an error modal if the user just closed the popup themselves.
+        if (!result.cancelled) {
+            showConfirmationModal(result.message);
+        }
+    }
+}
+
 // REPLACE your entire renderLoginPage function with this one
 function renderLoginPage() {
 
@@ -3426,8 +3485,24 @@ function renderLoginPage() {
         }
     });
 
-    document.querySelectorAll('.btn-social').forEach(btn => {
-        btn.addEventListener('click', () => showConfirmationModal('Social login is a demo feature.'));
+    document.querySelector('.btn-google').addEventListener('click', (e) => handleSocialLogin('google', e.currentTarget));
+    document.querySelector('.btn-facebook').addEventListener('click', (e) => handleSocialLogin('facebook', e.currentTarget));
+
+    document.getElementById('forgot-password-link').addEventListener('click', async (e) => {
+        e.preventDefault();
+        const emailInput = document.getElementById('login-email');
+        const email = emailInput.value.trim();
+
+        if (!email) {
+            showConfirmationModal('Please enter your email address above first, then click "Forgot Password?" again.');
+            emailInput.focus();
+            return;
+        }
+
+        await auth.sendPasswordReset(email);
+        // Same message regardless of outcome, so we don't reveal whether an
+        // account exists for that email address.
+        showConfirmationModal("If an account exists for that email, we've sent a password reset link.");
     });
 }
 
@@ -3437,15 +3512,32 @@ function renderRegisterPage() {
         <div class="auth-container">
             <h2 class="auth-title">Create Your Account</h2>
             <p class="auth-subtitle">Join us to discover exquisite hampers for every occasion.</p>
+
+            <div class="social-login-container">
+                <button type="button" class="btn btn-social btn-google"><i class="fab fa-google"></i> Continue with Google</button>
+                <button type="button" class="btn btn-social btn-facebook"><i class="fab fa-facebook-f"></i> Continue with Facebook</button>
+            </div>
+
+            <div class="separator"><span>OR</span></div>
+
             <form id="register-form">
                 <div class="form-group">
-                    <input type="text" id="register-name" placeholder="Full Name" required>
+                    <div class="input-wrapper">
+                        <input type="text" id="register-name" placeholder="Full Name" required>
+                    </div>
                 </div>
                 <div class="form-group">
-                    <input type="email" id="register-email" placeholder="Email Address" required>
+                    <div class="input-wrapper">
+                        <input type="email" id="register-email" placeholder="Email Address" required>
+                    </div>
                 </div>
                 <div class="form-group">
-                    <input type="password" id="register-password" placeholder="Password" required>
+                    <div class="input-wrapper">
+                        <input type="password" id="register-password" placeholder="Password" required>
+                        <button type="button" class="suffix-icon-btn" id="register-password-toggle" aria-label="Toggle password visibility">
+                            <i class="fa-solid fa-eye-slash"></i>
+                        </button>
+                    </div>
                     <!-- New Password Strength Meter -->
                     <div class="password-strength-container">
                         <div id="register-strength-bar" class="strength-bar"></div>
@@ -3453,7 +3545,12 @@ function renderRegisterPage() {
                     <div id="register-strength-text" class="password-strength-text"></div>
                 </div>
                 <div class="form-group">
-                    <input type="password" id="register-confirm-password" placeholder="Confirm Password" required>
+                    <div class="input-wrapper">
+                        <input type="password" id="register-confirm-password" placeholder="Confirm Password" required>
+                        <button type="button" class="suffix-icon-btn" id="register-confirm-password-toggle" aria-label="Toggle password visibility">
+                            <i class="fa-solid fa-eye-slash"></i>
+                        </button>
+                    </div>
                 </div>
                 <button type="submit" id="register-btn" class="btn btn-primary btn-full-width">
                     <span class="btn-text">Create Account</span>
@@ -3468,6 +3565,29 @@ function renderRegisterPage() {
     const passwordInput = document.getElementById('register-password');
     const strengthBar = document.getElementById('register-strength-bar');
     const strengthText = document.getElementById('register-strength-text');
+
+    const togglePasswordVisibility = (toggleBtnId, inputId) => {
+        const toggleBtn = document.getElementById(toggleBtnId);
+        if (!toggleBtn) return;
+        toggleBtn.addEventListener('click', () => {
+            const input = document.getElementById(inputId);
+            const icon = toggleBtn.querySelector('i');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            } else {
+                input.type = 'password';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            }
+        });
+    };
+    togglePasswordVisibility('register-password-toggle', 'register-password');
+    togglePasswordVisibility('register-confirm-password-toggle', 'register-confirm-password');
+
+    document.querySelector('.btn-google').addEventListener('click', (e) => handleSocialLogin('google', e.currentTarget));
+    document.querySelector('.btn-facebook').addEventListener('click', (e) => handleSocialLogin('facebook', e.currentTarget));
 
     passwordInput.addEventListener('input', () => {
         const password = passwordInput.value;
@@ -4453,17 +4573,15 @@ async function placeOrder() {
         });
 
         if (result.orderId) {
-            // --- 📊 ANALYTICS: Log Purchase Source ---
-            if (typeof firebase !== 'undefined' && firebase.analytics) {
-                const source = sessionStorage.getItem('last_order_source') || 'direct';
-                firebase.analytics().logEvent('purchase', {
-                    transaction_id: result.orderId,
-                    value: totalAmount,
-                    currency: 'GBP',
-                    source: source
-                });
-                sessionStorage.removeItem('last_order_source');
-            }
+            // --- 📊 ANALYTICS: Log Purchase Source (consent-gated, see logAnalyticsEvent) ---
+            const source = sessionStorage.getItem('last_order_source') || 'direct';
+            logAnalyticsEvent('purchase', {
+                transaction_id: result.orderId,
+                value: totalAmount,
+                currency: 'GBP',
+                source: source
+            });
+            sessionStorage.removeItem('last_order_source');
 
             // --- NAVIGATION ---
             pageCheckout.innerHTML = `<div class="order-confirmation"><h2>Thank You, ${finalAddress.fullName.split(' ')[0]}!</h2><p>Your order #${result.orderId} has been placed successfully.</p><button id="back-to-home-btn" class="btn btn-primary btn-full-width">Continue Shopping</button></div>`;
@@ -4731,9 +4849,9 @@ function loadPayPalSdk() {
 }
 
 function showOrderConfirmationPage(orderId, customerFirstName, totalAmount, paymentStatus) {
-    if (typeof firebase !== 'undefined' && firebase.analytics && typeof totalAmount === 'number') {
+    if (typeof totalAmount === 'number') {
         const source = sessionStorage.getItem('last_order_source') || 'direct';
-        firebase.analytics().logEvent('purchase', {
+        logAnalyticsEvent('purchase', {
             transaction_id: orderId, value: totalAmount, currency: 'GBP', source
         });
         sessionStorage.removeItem('last_order_source');
@@ -5269,11 +5387,11 @@ function renderAccountPage() {
         <div class="account-container">
             <h2 class="account-title">Welcome, ${userName}!</h2>
             <div class="account-menu">
-                <a href="/#/account/orders" class="account-menu-item"><i class="fa-solid fa-box-archive"></i> My Orders</a>
-                <a href="/#/account/wishlist" class="account-menu-item"><i class="fa-solid fa-heart"></i> My Wishlist</a>
-                <a href="/#/account/returns" class="account-menu-item"><i class="fa-solid fa-undo"></i> My Returns</a>
-                <a href="/#/account/addresses" class="account-menu-item"><i class="fa-solid fa-map-location-dot"></i> My Addresses</a>
-                <a href="/#/account/settings" class="account-menu-item"><i class="fa-solid fa-cog"></i> Account Settings</a>
+                <a href="/account/orders" class="account-menu-item"><i class="fa-solid fa-box-archive"></i> My Orders</a>
+                <a href="/account/wishlist" class="account-menu-item"><i class="fa-solid fa-heart"></i> My Wishlist</a>
+                <a href="/account/returns" class="account-menu-item"><i class="fa-solid fa-undo"></i> My Returns</a>
+                <a href="/account/addresses" class="account-menu-item"><i class="fa-solid fa-map-location-dot"></i> My Addresses</a>
+                <a href="/account/settings" class="account-menu-item"><i class="fa-solid fa-cog"></i> Account Settings</a>
             </div>
 
             
@@ -5359,7 +5477,7 @@ function renderMyReturnsPage() {
     let contentHtml = `<div class="page-header"><h2>My Returns</h2><button class="btn btn-secondary" id="returns-back-to-account">Back to Account</button></div>`;
 
     if (userReturns.length === 0) {
-        contentHtml += `<div class="empty-state-container"><p>You have not requested any returns.</p><a href="/#/account/orders" class="btn btn-primary">View My Orders</a></div>`;
+        contentHtml += `<div class="empty-state-container"><p>You have not requested any returns.</p><a href="/account/orders" class="btn btn-primary">View My Orders</a></div>`;
     } else {
         contentHtml += `<div class="returns-list">${userReturns.map(ret => {
             const cancelButtonHtml = ret.status === 'Pending' ? `<button class="btn btn-danger btn-sm cancel-return-btn" data-return-id="${ret.id}">Cancel Request</button>` : '';
@@ -5510,7 +5628,7 @@ async function renderMyOrdersPage(skipRefresh = false) {
     });
 
     if (filteredOrders.length === 0) {
-        contentHtml += `<div class="empty-state-container"><p>You haven't placed any orders matching these criteria.</p>${userOrders.length > 0 ? '<button id="clear-order-filters-btn" class="btn btn-secondary btn-sm">Clear Filters</button>' : '<a href="/#/" class="btn btn-primary">Start Shopping</a>'}</div>`;
+        contentHtml += `<div class="empty-state-container"><p>You haven't placed any orders matching these criteria.</p>${userOrders.length > 0 ? '<button id="clear-order-filters-btn" class="btn btn-secondary btn-sm">Clear Filters</button>' : '<a href="/" class="btn btn-primary">Start Shopping</a>'}</div>`;
     } else {
         contentHtml += `<div class="order-list">${filteredOrders.map(order => {
             const status = order.status || 'Pending';
@@ -6525,16 +6643,51 @@ function closeNewsletterPopup() {
 }
 
 // --- ADD THIS FUNCTION ---
-function handleNewsletterSubmit(e) {
+async function handleNewsletterSubmit(e) {
     e.preventDefault();
     const emailInput = document.getElementById('newsletter-email-modal');
     if (emailInput) {
         const email = emailInput.value;
-        showConfirmationModal(`Thank you for subscribing, ${email}! (This is a demo).`);
+        try {
+            await fetch('/api/newsletter', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, source: 'popup' })
+            });
+        } catch (err) {
+            console.error('Newsletter subscribe error:', err);
+        }
+        showConfirmationModal(`Thank you for subscribing, ${email}!`);
         closeNewsletterPopup();
         document.getElementById('newsletter-form-modal').reset();
     }
 }
+// --- ANALYTICS: consent-gated, fires nothing until the cookie banner is
+// accepted (localStorage 'cookieConsent' === 'granted', set by the Accept
+// button below). Previously firebase.analytics() was only ever called from
+// two purchase-only call sites with no consent check at all -- this wrapper
+// centralises that check so every analytics call (broad page-view tracking
+// added below, plus the existing purchase event) respects it consistently. ---
+function hasAnalyticsConsent() {
+    return localStorage.getItem('cookieConsent') === 'granted';
+}
+
+function logAnalyticsEvent(eventName, params = {}) {
+    if (!hasAnalyticsConsent()) return;
+    if (typeof firebase === 'undefined' || !firebase.analytics) return;
+    try {
+        firebase.analytics().logEvent(eventName, params);
+    } catch (err) {
+        console.error('Analytics logEvent failed:', err);
+    }
+}
+
+// Broad, site-wide tracking: called on every route change (see router.handleRouteChange)
+// so browsing is tracked, not just completed purchases.
+function logPageView(path) {
+    logAnalyticsEvent('page_view', { page_path: path || '/' });
+}
+
 function displayCookieConsent() {
     const message = window.appSettings?.cookieConsentMessage || 'We use cookies to ensure you get the best experience on our website.';
     const hasConsented = localStorage.getItem('cookieConsent') === 'granted';
@@ -6557,6 +6710,10 @@ function displayCookieConsent() {
     document.getElementById('cookie-consent-accept')?.addEventListener('click', () => {
         localStorage.setItem('cookieConsent', 'granted');
         consentBanner.remove();
+        // Log the page they're currently on the moment they accept -- nothing
+        // was tracked before this click (correct per GDPR/PECR: no analytics
+        // pre-consent), so this is the first page_view of the session.
+        logPageView(router.currentPath);
     });
 }
 function applyCssVariables(settings) {
@@ -6610,27 +6767,31 @@ function renderVibeScroller() {
     // --- 2. RETRIEVE DATA (The Update) ---
     let chipsToRender = [];
 
-    if (activeContext === 'default') {
-        // --- 🟢 RESTORED LOGIC: USE ALL SITE TAGS ---
-        // 1. Start with the "system" chips
+    // Builds the full site tag list (system chips + admin-configured
+    // dietary/occasion/contents tags). Used for the default view, AND as the
+    // graceful fallback below when a named context (e.g. 'budget') hasn't
+    // been configured yet -- previously that fell back to just ['BESTSELLER'],
+    // making the chip row collapse down to a single "Trending" chip instead
+    // of showing the full, still-useful tag list.
+    const buildDefaultChips = () => {
         const defaults = ['BESTSELLER', 'Sale'];
-        
-        // 2. Add all dynamic tags loaded from Site Settings
-        // (dynamicSearchTags is the global variable holding your Admin Panel tags)
         const siteTags = [
             ...(dynamicSearchTags.occasion || []),
             ...(dynamicSearchTags.dietary || []),
-            ...(dynamicSearchTags.contents || []) 
+            ...(dynamicSearchTags.contents || [])
         ];
+        const combined = [...new Set([...defaults, ...siteTags])];
+        return combined.length > 0 ? combined : ['BESTSELLER'];
+    };
 
-        // 3. Combine and remove duplicates
-        chipsToRender = [...new Set([...defaults, ...siteTags])];
+    const contextData = DISCOVERY_CONTEXTS[activeContext];
+    const hasConfiguredSuggestions = contextData && Array.isArray(contextData.suggestions) && contextData.suggestions.length > 0;
 
-        // Safety fallback if settings haven't loaded yet
-        if (chipsToRender.length === 0) chipsToRender = ['BESTSELLER'];
+    if (activeContext === 'default' || !hasConfiguredSuggestions) {
+        chipsToRender = buildDefaultChips();
     } else {
-        // If we are in a specific context (like "budget" or "search match"), show specific chips
-        chipsToRender = DISCOVERY_CONTEXTS[activeContext]?.suggestions || ['BESTSELLER'];
+        // A specific context (like a search-term match) IS configured with its own suggestions
+        chipsToRender = contextData.suggestions;
     }
 
     // --- 3. THE MIRROR (Ensure selected chips are visible) ---
@@ -6870,12 +7031,16 @@ function initScarcityTicker() {
 
 async function fetchDiscoveryConfig() {
     console.log("🧠 The Brain: Initializing...");
-    
+
+    // 1. Direct Firebase (fastest path when it works). Given its own
+    // try/catch -- previously this and the API backup below shared one
+    // try/catch, so a client-side Firestore permissions error (customers
+    // aren't allowed to read config/discovery_engine directly) threw past
+    // the backup entirely and the Brain silently never loaded at all.
     try {
-        // 1. Direct Firebase (Fastest and works immediately)
         const firestore = firebase.firestore();
         const doc = await firestore.collection('config').doc('discovery_engine').get();
-        
+
         if (doc.exists) {
             console.log("🧠 Discovery Engine: Data found in Firebase.");
             applyDiscoveryData(doc.data());
@@ -6883,15 +7048,20 @@ async function fetchDiscoveryConfig() {
         } else {
             console.log("🧠 Discovery Engine: No direct doc found, checking API...");
         }
+    } catch (e) {
+        console.warn("🧠 Direct Firestore read failed (expected if client rules block it), falling back to API:", e.message);
+    }
 
-        // 2. Backup: API (Only runs if the Firebase doc is missing)
+    // 2. Backup: server-side API, uses the Admin SDK so it isn't subject to
+    // the client-side security rules that block step 1 above.
+    try {
         const response = await fetch('/api/site-settings?type=discovery');
         if (response.ok) {
             const data = await response.json();
             applyDiscoveryData(data);
         }
     } catch (e) {
-        console.error("🧠 Discovery Config Load Error:", e);
+        console.error("🧠 Discovery Config Load Error (API fallback also failed):", e);
     }
 }
 

@@ -1234,9 +1234,14 @@ function openProductModal(item = null) {
 // Replace the old populateMenuEditor function with this one
 async function populateMenuEditor() {
     try {
-        const response = await fetch('/data/Header_nav.json');
+        // CHANGED (2026-08-08): was loading from the static /data/Header_nav.json
+        // seed file, which doesn't reflect any live edits already saved to
+        // Firestore -- editing based on stale data here would silently
+        // overwrite real changes on save. Load the actual live document instead.
+        const response = await fetch('/api/site-settings?type=menu');
         if (!response.ok) throw new Error('Could not fetch menu data.');
-        const menuData = await response.json();
+        const rawData = await response.json();
+        const menuData = Array.isArray(rawData) ? rawData : (rawData.items || []);
         const editorElement = document.getElementById('menu-json-editor');
 
         if (editorElement) {
@@ -2112,11 +2117,18 @@ if (menuForm) {
 
         showAdminConfirm('Are you sure you want to save these changes to the main navigation menu?', async () => {
             try {
+                // CHANGED (2026-08-08): was POSTing to /api/update-menu, which
+                // doesn't exist as an endpoint (404) -- the save button silently
+                // failed every time. site-settings.js already has a working
+                // POST handler for type=menu; it just needed to be pointed at.
+                // Payload wrapped in { items: ... } to match the document shape
+                // GET returns (docSnap.data() -> { items: [...] }), since
+                // Firestore documents can't be a bare array at the root.
                 const token = await fbAuth.currentUser.getIdToken();
-                const response = await fetch('/api/update-menu', {
+                const response = await fetch('/api/site-settings?type=menu', {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify(menuData)
+                    body: JSON.stringify({ items: menuData })
                 });
 
                 const result = await response.json();

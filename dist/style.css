@@ -728,6 +728,10 @@ video {
   margin-left: auto;
 }
 
+.mr-1 {
+  margin-right: 0.25rem;
+}
+
 .mr-2 {
   margin-right: 0.5rem;
 }
@@ -1683,6 +1687,11 @@ video {
 .text-yellow-600 {
   --tw-text-opacity: 1;
   color: rgb(202 138 4 / var(--tw-text-opacity, 1));
+}
+
+.text-yellow-700 {
+  --tw-text-opacity: 1;
+  color: rgb(161 98 7 / var(--tw-text-opacity, 1));
 }
 
 .text-yellow-800 {
@@ -3911,6 +3920,19 @@ body.product-list-active .search-container {
   /* Hide labels as we use placeholders */
 }
 
+/* Fields had no vertical spacing at all -- the shared .form-group rule
+   (used across checkout/returns/etc too) only sets position:relative, so
+   login/register fields rendered jammed together. Scoped to .auth-container
+   so it doesn't affect other pages that reuse .form-group with their own spacing. */
+
+.auth-container .form-group {
+  margin-bottom: 1.25rem;
+}
+
+.auth-container .form-group:last-of-type {
+  margin-bottom: 0;
+}
+
 .input-wrapper {
   position: relative;
   display: flex;
@@ -3921,7 +3943,29 @@ body.product-list-active .search-container {
   /* --- THE FIX IS HERE: Set right padding to 45px for all inputs in wrapper --- */
   padding: 0 45px 0 16px;
   height: 50px;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: var(--border-radius-md, 8px);
   font-family: 'Inter', sans-serif;
+  font-size: 1rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input-wrapper input:focus {
+  outline: none;
+  border-color: var(--cta-color-green, var(--primary-color));
+  box-shadow: 0 0 0 3px rgba(6, 95, 70, 0.12);
+}
+
+@media (max-width: 480px) {
+  .auth-container {
+    padding: 1.5rem;
+    margin: 1rem auto;
+  }
+
+  .auth-title {
+    font-size: 1.5rem;
+  }
 }
 
 /* We no longer need the specific override rule, so this block can be removed */

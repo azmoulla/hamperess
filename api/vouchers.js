@@ -291,17 +291,26 @@ export default async function handler(req, res) {
                 }
             });
 
-            // 1. Fast Response for UI
-            res.status(200).json({ success: true, code: newCode, value });
+            // Send the email BEFORE responding. Serverless functions (Vercel)
+            // can freeze/kill execution the moment the response is sent, so a
+            // "fire and forget" call here (previous behaviour) could get cut
+            // off before the fetch to Brevo ever completed -- matches the
+            // await-before-respond pattern already used for order/shipping
+            // emails in orders.js / admin-orders.js. Wrapped in try/catch so
+            // a Brevo hiccup doesn't fail the voucher creation itself, since
+            // the credit is already committed to Firestore at this point.
+            try {
+                await sendVoucherEmail({
+                    email: customerEmail,
+                    name: 'Valued Customer',
+                    code: newCode,
+                    value: value
+                });
+            } catch (emailError) {
+                console.error(`Voucher ${newCode} created OK, but email failed:`, emailError.message);
+            }
 
-            // 2. Fire-and-Forget Email
-            sendVoucherEmail({
-                email: customerEmail,
-                name: 'Valued Customer',
-                code: newCode,
-                value: value
-            });
-            return; // Function ends
+            return res.status(200).json({ success: true, code: newCode, value });
         }
 
     } catch (error) {

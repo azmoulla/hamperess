@@ -168,10 +168,10 @@ async register(name, email, password) {
     try {
         const userCredential = await fbAuth.createUserWithEmailAndPassword(email, password);
         const user = userCredential.user;
-        
+
         // Trigger the Firebase email verification process.
         await user.sendEmailVerification();
-        
+
         // Set the user's display name in Firebase Auth
         await user.updateProfile({ displayName: name });
 
@@ -194,6 +194,73 @@ async register(name, email, password) {
         return { success: false, message: error.message };
     }
 },
+        // Sends a Firebase password-reset email. The "Forgot Password?" link
+        // previously had no handler at all (href="#", did nothing).
+        async sendPasswordReset(email) {
+            try {
+                await fbAuth.sendPasswordResetEmail(email);
+                return { success: true };
+            } catch (error) {
+                console.error("Firebase Password Reset Error:", error);
+                return { success: false, message: error.message };
+            }
+        },
+
+        // Signs in with a Firebase popup provider (Google/Facebook) and
+        // ensures a Firestore user profile doc exists for first-time sign-ins.
+        async _socialLogin(provider) {
+            try {
+                const result = await fbAuth.signInWithPopup(provider);
+                const user = result.user;
+
+                // If this is the first time we've seen this user, create their
+                // Firestore profile doc (mirrors what register() does for
+                // email/password sign-ups). merge:true keeps this safe to run
+                // on every social login without clobbering existing data.
+                const userDocRef = db.collection('users').doc(user.uid);
+                const userDoc = await userDocRef.get();
+                if (!userDoc.exists) {
+                    await userDocRef.set({
+                        name: user.displayName || user.email,
+                        email: user.email,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+
+                return { success: true };
+            } catch (error) {
+                console.error("Social Login Error:", error);
+
+                // Don't show an error if the user just closed the popup or
+                // clicked it twice in a row -- that's not a real failure.
+                if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+                    return { success: false, cancelled: true };
+                }
+
+                if (error.code === 'auth/account-exists-with-different-credential') {
+                    return { success: false, message: "An account already exists with this email using a different sign-in method. Try logging in with email and password instead." };
+                }
+
+                if (error.code === 'auth/operation-not-allowed') {
+                    return { success: false, message: "This sign-in method isn't enabled yet. Please try email and password, or contact support." };
+                }
+
+                return { success: false, message: "Something went wrong signing you in. Please try again." };
+            }
+        },
+
+        // Signs in (or signs up) with Google via a Firebase popup.
+        async loginWithGoogle() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            return this._socialLogin(provider);
+        },
+
+        // Signs in (or signs up) with Facebook via a Firebase popup.
+        async loginWithFacebook() {
+            const provider = new firebase.auth.FacebookAuthProvider();
+            return this._socialLogin(provider);
+        },
+
         // Logs in a user // Logs in a user with robust error handling
         async login(email, password) {
             try {

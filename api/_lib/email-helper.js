@@ -10,7 +10,7 @@ export async function sendVoucherEmail({ email, name, code, value }) {
     const emailData = {
         sender: {
             name: "Luxury Hampers",
-            email: "noreply@your-confirmed-domain.com" // IMPORTANT: Replace with your confirmed Brevo sender email
+            email: "az.moulla@gmail.com" // Confirmed Brevo sender -- matches brevo-helper.js used for order/shipping emails
         },
         to: [{ email, name }],
         subject: `Your Store Credit from Luxury Hampers: ${code}`,

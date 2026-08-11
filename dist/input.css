@@ -999,12 +999,32 @@ body.product-list-active .search-container {
 .separator:not(:empty)::after { margin-left: .5em; }
 /* Form Styling */
 .auth-container .form-group label { display: none; /* Hide labels as we use placeholders */}
+/* Fields had no vertical spacing at all -- the shared .form-group rule
+   (used across checkout/returns/etc too) only sets position:relative, so
+   login/register fields rendered jammed together. Scoped to .auth-container
+   so it doesn't affect other pages that reuse .form-group with their own spacing. */
+.auth-container .form-group { margin-bottom: 1.25rem; }
+.auth-container .form-group:last-of-type { margin-bottom: 0; }
 .input-wrapper {  position: relative; display: flex;align-items: center;}
 .input-wrapper input {
     /* --- THE FIX IS HERE: Set right padding to 45px for all inputs in wrapper --- */
-    padding: 0 45px 0 16px; 
+    padding: 0 45px 0 16px;
     height: 50px;
+    width: 100%;
+    box-sizing: border-box;
+    border-radius: var(--border-radius-md, 8px);
     font-family: 'Inter', sans-serif;
+    font-size: 1rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.input-wrapper input:focus {
+    outline: none;
+    border-color: var(--cta-color-green, var(--primary-color));
+    box-shadow: 0 0 0 3px rgba(6, 95, 70, 0.12);
+}
+@media (max-width: 480px) {
+    .auth-container { padding: 1.5rem; margin: 1rem auto; }
+    .auth-title { font-size: 1.5rem; }
 }
 
 /* We no longer need the specific override rule, so this block can be removed */
