@@ -3,13 +3,25 @@
   "rewrites": [
     { "source": "/api/newsletter", "destination": "/api/utility?fn=newsletter" },
     { "source": "/api/address-proxy", "destination": "/api/utility?fn=address-proxy" },
+    { "source": "/sitemap.xml", "destination": "/api/utility?fn=sitemap" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     {
       "source": "/admin",
       "destination": "/admin.html"
     },
     {
-      "source": "/((?!api/|assets/|data/|admin\\.html|favicon\\.ico|manifest\\.json|service-worker\\.js).*)",
+      "source": "/((?!api/|assets/|data/|admin\\.html|favicon\\.ico|manifest\\.json|service-worker\\.js|robots\\.txt|sitemap\\.xml|index\\.html).*)",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(?:[Bb]ot|[Cc]rawl|[Ss]pider|[Ss]lurp|facebookexternalhit|[Tt]witterbot|[Ll]inked[Ii]n[Bb]ot|[Ww]hats[Aa]pp|[Ss]lackbot|[Tt]elegram[Bb]ot|[Dd]iscordbot|[Pp]interest|[Aa]pplebot|[Ss]kype[Uu]ri[Pp]review|Google-InspectionTool|AdsBot|Mediapartners|[Yy]andex|ia_archiver|[Ee]mbedly|Quora Link Preview|W3C_Validator).*"
+        }
+      ],
+      "destination": "/api/utility?fn=render&p=$1"
+    },
+    {
+      "source": "/((?!api/|assets/|data/|admin\\.html|favicon\\.ico|manifest\\.json|service-worker\\.js|robots\\.txt|index\\.html).*)",
       "destination": "/index.html"
     }
   ],

@@ -79,7 +79,14 @@
 
         <header class="main-header">
             <div class="header-content-wrapper">
-                <h1 id="header-title" class="header-title">LuxuryHampers</h1>
+                <!-- FIX (2026-08-11, SEO): was <h1>, duplicating the real
+                     page heading (e.g. the hero's "Exquisite Hampers for
+                     Every Occasion" <h1>) on every single page. Two H1s per
+                     page is a well-known on-page SEO/heading-hierarchy
+                     issue -- a site's logo/branding is conventionally not a
+                     heading. #header-title is only ever targeted by ID/class
+                     (click handler, CSS) so this is safe to change. -->
+                <p id="header-title" class="header-title">LuxuryHampers</p>
         
                 <div class="search-container">
                     <form id="search-form" role="search">
@@ -336,7 +343,7 @@
     <script src="firebase-config.js?v=PAYPAL12"></script>
     <script src="auth.js?v=SOCIAL3"></script>
     <script src="wishlist.js"></script>
-    <script src="app.js?v=CHIPS25"></script>
+    <script src="app.js?v=CHIPS28"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-analytics-compat.js"></script>
 
 </body>

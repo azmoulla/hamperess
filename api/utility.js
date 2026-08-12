@@ -10,6 +10,7 @@
 // hood, so public/app.js needed no changes.
 import { db } from './_lib/firebase-admin-helper.js';
 import admin from 'firebase-admin';
+import { buildSitemapXml, renderSeoPage } from './_lib/seo-helper.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -106,6 +107,72 @@ async function handleAddressProxy(req, res) {
     }
 }
 
+// SEO (2026-08-11): dynamic sitemap.xml, listing every static page, product,
+// and category page for search engines. See api/_lib/seo-helper.js for the
+// generation logic and vercel.json for the /sitemap.xml -> ?fn=sitemap rewrite.
+async function handleSitemap(req, res) {
+    try {
+        const xml = await buildSitemapXml(req);
+        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+        // Cache at the edge for an hour -- the catalog/menu don't change
+        // often enough to justify regenerating this on every crawl hit.
+        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=3600');
+        return res.status(200).send(xml);
+    } catch (error) {
+        console.error('Sitemap generation error:', error);
+        return res.status(500).send('Failed to generate sitemap.');
+    }
+}
+
+// SEO (2026-08-11): server-side prerendering for crawlable HTML. This site
+// is a client-rendered SPA -- every route serves the same static
+// <title>Luxury Hampers</title> shell with no content until app.js runs, so
+// non-JS crawlers (Bing, most social-share unfurl bots) and Google's
+// render-budget-limited pass saw a near-blank page for every URL. This
+// handler fetches the real per-page data (product, category, static
+// content) server-side and injects a correct title/meta description/
+// canonical/Open Graph/Twitter Card/JSON-LD block plus a genuine content
+// snapshot into the page before it's served.
+//
+// vercel.json only routes requests here when the User-Agent matches a known
+// bot/crawler pattern (see the `has` condition on the /sitemap.xml-adjacent
+// rewrite) -- real visitors keep getting the plain static index.html
+// directly, so there's no added latency/Firestore-read cost on normal
+// human traffic. If that User-Agent match is ever wrong or unsupported in
+// some environment, this handler still degrades gracefully: it just
+// prerenders for everyone who reaches it, which is slower but not broken.
+async function handleRender(req, res) {
+    try {
+        const path = req.query.p || '/';
+        const html = await renderSeoPage(req, Array.isArray(path) ? path[0] : path);
+
+        if (html) {
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=1800');
+            return res.status(200).send(html);
+        }
+
+        // Not an SEO-relevant route (or product/page not found) -- fall back
+        // to the plain static shell exactly as if this rewrite didn't exist.
+        const fallback = await fetch(`${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/index.html`);
+        const fallbackHtml = await fallback.text();
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        return res.status(fallback.status).send(fallbackHtml);
+    } catch (error) {
+        console.error('SSR render error:', error);
+        // Never hard-fail a page load over a prerendering bug -- fall back
+        // to the plain static shell so the site stays up either way.
+        try {
+            const fallback = await fetch(`${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/index.html`);
+            const fallbackHtml = await fallback.text();
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            return res.status(200).send(fallbackHtml);
+        } catch {
+            return res.status(500).send('Internal Server Error');
+        }
+    }
+}
+
 export default async function handler(req, res) {
     const { fn } = req.query;
 
@@ -114,6 +181,10 @@ export default async function handler(req, res) {
             return handleNewsletter(req, res);
         case 'address-proxy':
             return handleAddressProxy(req, res);
+        case 'sitemap':
+            return handleSitemap(req, res);
+        case 'render':
+            return handleRender(req, res);
         default:
             return res.status(404).json({ error: 'Unknown utility function.' });
     }

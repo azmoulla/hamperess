@@ -779,6 +779,58 @@ function generateStarRating(rating = 0) {
 }
 
 // ----------------------------------------------------------------- //
+// -------------------- SEO: client-side meta tag sync ------------- //
+// ----------------------------------------------------------------- //
+// ADDED (2026-08-11): the initial page load already gets correct per-page
+// <title>/description/canonical/Open Graph tags server-side -- see
+// api/utility.js's fn=render + api/_lib/seo-helper.js, which prerender real
+// HTML for bots/crawlers/social-share unfurlers. But once the SPA has
+// booted, every further navigation happens purely via pushState and never
+// touches the server again, so without this the browser tab title (and
+// anything reading the DOM after JS runs, including Google's second-pass
+// render) would stay stuck on whichever page the user first landed on.
+// This mirrors (a simplified, client-side version of) the exact same
+// per-route logic as resolveSeoMeta() in api/_lib/seo-helper.js.
+function setMetaTags({ title, description, canonical, ogImage, ogType = 'website' }) {
+    if (title) document.title = title;
+
+    const setMeta = (attr, key, value) => {
+        if (!value) return;
+        let el = document.head.querySelector(`meta[${attr}="${key}"]`);
+        if (!el) {
+            el = document.createElement('meta');
+            el.setAttribute(attr, key);
+            document.head.appendChild(el);
+        }
+        el.setAttribute('content', value);
+    };
+
+    setMeta('name', 'description', description);
+    setMeta('property', 'og:title', title);
+    setMeta('property', 'og:description', description);
+    setMeta('property', 'og:type', ogType);
+    setMeta('name', 'twitter:title', title);
+    setMeta('name', 'twitter:description', description);
+
+    if (canonical) {
+        let link = document.head.querySelector('link[rel="canonical"]');
+        if (!link) {
+            link = document.createElement('link');
+            link.setAttribute('rel', 'canonical');
+            document.head.appendChild(link);
+        }
+        link.setAttribute('href', canonical);
+        setMeta('property', 'og:url', canonical);
+    }
+
+    if (ogImage) {
+        setMeta('property', 'og:image', ogImage);
+        setMeta('name', 'twitter:image', ogImage);
+        setMeta('name', 'twitter:card', 'summary_large_image');
+    }
+}
+
+// ----------------------------------------------------------------- //
 // -------------------- KIT: ROUTER IMPLEMENTATION ----------------- //
 // ----------------------------------------------------------------- //
 
@@ -1877,6 +1929,12 @@ function displayFooter(footerInfo) {
 }
 function renderHomePage() {
     console.log("Router is rendering the homepage.");
+    setMetaTags({
+        title: 'LuxuryHampers | Luxury Gift Hampers, Delivered UK-Wide',
+        description: 'Discover our curated collection of luxury food and wine hampers, hand-packed and delivered UK-wide.',
+        canonical: window.location.origin + '/',
+        ogType: 'website'
+    });
     showAllProducts();
 }
 function renderFooterLayout() {
@@ -2395,8 +2453,19 @@ async function showProductDetail(slug) {
     const currentPriceBase = hasSale ? product.salePrice : product.price;
     
     // Safe description handling
-    const safeDescription = product.professionalDescription || 
+    const safeDescription = product.professionalDescription ||
         (Array.isArray(product.description) ? product.description.join(' ') : (product.description || ''));
+
+    // SEO: keep <title>/meta/canonical/OG in sync with this product -- see
+    // setMetaTags() and the matching server-side logic in
+    // api/_lib/seo-helper.js's resolveSeoMeta() product branch.
+    setMetaTags({
+        title: `${product.title} | LuxuryHampers`,
+        description: safeDescription ? safeDescription.replace(/\s+/g, ' ').trim().slice(0, 300) : product.title,
+        canonical: `${window.location.origin}/products/${createSlug(product.slug)}`,
+        ogImage: imageUrls[0],
+        ogType: 'product'
+    });
 
     // 3. Build Variant Dropdowns
     let variantsHtml = '';
@@ -2759,7 +2828,7 @@ async function loadCrossSells(product) {
             // 1. Generate HTML (Removed the broken onclick="cart.addItem...")
             grid.innerHTML = suggestions.map(c => `
                 <div class="mini-product-card">
-                    <img src="${c.imageUrl1 || 'assets/images/placeholder.png'}" class="mini-product-img">
+                    <img src="${c.imageUrl1 || 'assets/images/placeholder.png'}" alt="${c.name || ''}" class="mini-product-img">
                     <p class="text-xs font-bold truncate">${c.name}</p>
                     <p class="text-xs text-gray-500">£${c.price.toFixed(2)}</p>
                     <button class="mini-add-btn" 
@@ -3034,6 +3103,12 @@ function handleMenuClick(menuItem) {
     if (menuItem.systemFilter) {
         currentTagFilters = [menuItem.systemFilter];
         currentCategoryFilter = 'all';
+        const filterLabel = menuItem.systemFilter.charAt(0) + menuItem.systemFilter.slice(1).toLowerCase();
+        setMetaTags({
+            title: `${filterLabel} Hampers | LuxuryHampers`,
+            description: `Shop our ${filterLabel.toLowerCase()} hampers -- hand-packed and delivered UK-wide.`,
+            canonical: `${window.location.origin}/filter/${encodeURIComponent(menuItem.systemFilter)}`
+        });
         showPage('list');
         updateProductView();
         return;
@@ -3054,6 +3129,11 @@ function handleMenuClick(menuItem) {
     } else {
         currentCategoryFilter = argument;
         currentTagFilters = [];
+        setMetaTags({
+            title: `${argument} | LuxuryHampers`,
+            description: `Shop our ${argument} collection -- hand-packed and delivered UK-wide.`,
+            canonical: `${window.location.origin}/category/${encodeURIComponent(argument)}`
+        });
         showPage('list');
         updateProductView();
     }
@@ -3261,6 +3341,25 @@ async function fetchAndDisplayStaticPage(pageName) {
 
     // Render based on fetched content
     if (pageContent) {
+        // SEO: keep <title>/meta/canonical in sync for these static pages too --
+        // mirrors the static-page branch of resolveSeoMeta() in
+        // api/_lib/seo-helper.js. Route path uses hyphens (privacy-policy)
+        // while pageName uses underscores (privacy_policy) -- see defineRoutes().
+        const routePath = '/' + pageName.replace(/_/g, '-');
+        const faqList = pageName === 'faqs' ? (Array.isArray(pageContent) ? pageContent : (pageContent.faqs || [])) : null;
+        const staticFirstSectionText = faqList
+            ? String(faqList[0]?.answer || '').replace(/\s+/g, ' ').trim().slice(0, 250)
+            : (Array.isArray(pageContent.sections) && pageContent.sections[0]
+                ? String(pageContent.sections[0].content || '').replace(/\s+/g, ' ').trim().slice(0, 250)
+                : '');
+        const staticTitle = pageContent.pageTitle
+            || (pageName === 'faqs' ? 'Frequently Asked Questions' : pageName.replace(/_/g, ' '));
+        setMetaTags({
+            title: `${staticTitle} | LuxuryHampers`,
+            description: pageContent.pageSubtitle || staticFirstSectionText || `${staticTitle} -- LuxuryHampers.`,
+            canonical: window.location.origin + routePath
+        });
+
         // Route to the correct rendering function based on the page name and expected structure
         if (pageName === 'faqs' && (Array.isArray(pageContent) || (pageContent && Array.isArray(pageContent.faqs)))) {
             renderFaqPage(pageContent.faqs || pageContent);
@@ -6702,7 +6801,7 @@ async function renderReviewFormPage(orderId) {
         return `
         <div class="review-item-card" data-product-id="${item.productId}" style="border-bottom:1px solid #eee; padding:20px 0;">
             <div style="display:flex; align-items:center; gap:15px; margin-bottom:10px;">
-                <img src="${img}" style="width:60px; height:60px; object-fit:cover; border-radius:4px;">
+                <img src="${img}" alt="${item.title || ''}" style="width:60px; height:60px; object-fit:cover; border-radius:4px;">
                 <div>
                     <strong style="display:block; font-size:1.1em;">${item.title}</strong>
                     <span style="color:#666; font-size:0.9em;">Rate this item:</span>
