@@ -897,6 +897,24 @@ const router = {
     }
 };
 
+// ADDED (2026-08-12): router.navigate() deliberately no-ops when
+// window.location.pathname already matches the target path (its own perf
+// guard against redundant pushState calls) -- but several flows enter
+// "checkout" and its confirmation screen via a direct displayCheckoutPage()
+// call (cart sheet, guest checkout button, etc.), NOT router.navigate(), so
+// the URL bar can sit on '/' the entire time even though the visible page
+// has moved on. Clicking "Continue Shopping"/"Back to Home" afterwards then
+// called router.navigate('/') while already AT '/' -- the guard silently
+// skipped handleRouteChange(), so the button appeared to do nothing (user
+// report: order confirmation screen stayed on screen after clicking
+// Continue Shopping). This bypasses that guard for the one case where a
+// return-to-a-real-page action should always re-render, regardless of
+// whether the URL happened to already say '/'.
+function goToHomeForced() {
+    history.pushState(null, '', '/');
+    router.handleRouteChange();
+}
+
 function defineRoutes() {
     router.addRoute('/', renderHomePage);
     router.addRoute('/category/:name', params => handleMenuClick({ argument: params.name }));
@@ -3442,7 +3460,7 @@ function renderGenericStaticPage(pageData, pageName, titleOverride = null) {
     // visible behavior is unchanged, only the URL now stays correct.
     const backBtn = pageStatic.querySelector('#back-to-home-btn');
     if (backBtn) {
-         backBtn.addEventListener('click', () => router.navigate('/'));
+         backBtn.addEventListener('click', goToHomeForced);
     } else {
          console.warn("Could not find #back-to-home-btn in static page content.");
     }
@@ -3502,7 +3520,7 @@ function renderContactPage(data) {
             </div>
         </div>`;
 
-    pageStatic.querySelector('#back-to-home-btn').addEventListener('click', () => router.navigate('/'));
+    pageStatic.querySelector('#back-to-home-btn').addEventListener('click', goToHomeForced);
     showPage('static');
 }
 // 3. Add this new function specifically for rendering the FAQs page
@@ -3528,7 +3546,7 @@ function renderFaqPage(faqData) {
                 </details>`).join('')}
             </div>
         </div>`;
-    pageStatic.querySelector('#back-to-home-btn').addEventListener('click', () => router.navigate('/'));
+    pageStatic.querySelector('#back-to-home-btn').addEventListener('click', goToHomeForced);
     showPage('static');
 }
 
@@ -3575,7 +3593,7 @@ function renderDeliveryInfoPage(deliveryData) {
     // Re-attach listener after setting innerHTML
     const backBtn = pageStatic.querySelector('#back-to-home-btn');
     if (backBtn) {
-        backBtn.addEventListener('click', () => router.navigate('/'));
+        backBtn.addEventListener('click', goToHomeForced);
     } else {
         console.warn("Could not find #back-to-home-btn in static page content.");
     }
@@ -4879,7 +4897,7 @@ async function placeOrder() {
 
             // --- NAVIGATION ---
             pageCheckout.innerHTML = `<div class="order-confirmation"><h2>Thank You, ${finalAddress.fullName.split(' ')[0]}!</h2><p>Your order #${result.orderId} has been placed successfully.</p><button id="back-to-home-btn" class="btn btn-primary btn-full-width">Continue Shopping</button></div>`;
-            document.getElementById('back-to-home-btn').addEventListener('click', () => router.navigate('/'));
+            document.getElementById('back-to-home-btn').addEventListener('click', goToHomeForced);
 
             // --- STATE CLEARING ---
             cart = [];
@@ -4994,7 +5012,7 @@ async function placeGuestOrder() {
 
         // Display confirmation page
         pageCheckout.innerHTML = `<div class="order-confirmation"><h2>Thank You, ${guestDetails.name.split(' ')[0]}!</h2><p>Your order #${result.orderId} has been placed successfully.</p><button id="back-to-home-btn" class="btn btn-primary btn-full-width">Continue Shopping</button></div>`;
-        document.getElementById('back-to-home-btn').addEventListener('click', () => router.navigate('/'));
+        document.getElementById('back-to-home-btn').addEventListener('click', goToHomeForced);
 
         // Clear state AFTER confirmation page is shown
         cart = [];
@@ -5161,7 +5179,7 @@ function showOrderConfirmationPage(orderId, customerFirstName, totalAmount, paym
         : `Your order #${orderId} has been placed successfully.`;
 
     pageCheckout.innerHTML = `<div class="order-confirmation"><h2>Thank You, ${customerFirstName}!</h2><p>${message}</p><button id="back-to-home-btn" class="btn btn-primary btn-full-width">Continue Shopping</button></div>`;
-    document.getElementById('back-to-home-btn').addEventListener('click', () => router.navigate('/'));
+    document.getElementById('back-to-home-btn').addEventListener('click', goToHomeForced);
 
     cart = [];
     guestDetails = {};

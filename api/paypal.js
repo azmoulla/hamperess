@@ -46,7 +46,12 @@ export default async function handler(req, res) {
                 return res.status(400).json({ error: 'This order has no balance due, so PayPal is not needed.' });
             }
 
-            const paypalOrder = await createPayPalOrder(totalAmount, `hamperess-${Date.now()}`);
+            // ADDED (2026-08-12): pass the already-collected delivery address
+            // through so PayPal can be told to use it directly (see
+            // createPayPalOrder()'s shipping_preference comment) instead of
+            // asking the buyer to enter/select an address again inside the
+            // PayPal popup.
+            const paypalOrder = await createPayPalOrder(totalAmount, `hamperess-${Date.now()}`, orderPayload.deliveryAddress);
             return res.status(200).json({ paypalOrderId: paypalOrder.id });
         }
 

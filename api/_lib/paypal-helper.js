@@ -43,25 +43,53 @@ async function getAccessToken() {
  * to hand back to the client so it can render/approve the Smart Button.
  * @param {number} amount - total in GBP, e.g. 12.99
  * @param {string} referenceId - our own order reference (not yet a real order id at this point -- just for PayPal's records)
+ * @param {Object} [shippingAddress] - the delivery address already collected
+ *   and validated on our own checkout page (fullName, addressLine1,
+ *   addressLine2?, city, postcode). When present, this is handed to PayPal
+ *   with shipping_preference: SET_PROVIDED_ADDRESS -- see comment below.
  */
-export async function createPayPalOrder(amount, referenceId) {
+export async function createPayPalOrder(amount, referenceId, shippingAddress) {
     const accessToken = await getAccessToken();
+
+    const purchaseUnit = {
+        reference_id: referenceId,
+        amount: {
+            currency_code: 'GBP',
+            value: amount.toFixed(2)
+        }
+    };
+    const body = { intent: 'CAPTURE', purchase_units: [purchaseUnit] };
+
+    // ADDED (2026-08-12): without this, PayPal falls back to its own default
+    // shipping_preference (GET_FROM_FILE), which shows the buyer an address
+    // selection/entry step INSIDE the PayPal popup -- even though we already
+    // collected and validated a delivery address on our own checkout page
+    // moments earlier. This is what caused customers to effectively enter
+    // their address twice. SET_PROVIDED_ADDRESS locks PayPal to exactly the
+    // address we already have (shown read-only, not editable there), which
+    // removes the redundant step entirely. UK-only site (no country field
+    // collected anywhere) -- country_code is always GB.
+    if (shippingAddress && shippingAddress.addressLine1 && shippingAddress.postcode) {
+        purchaseUnit.shipping = {
+            name: { full_name: shippingAddress.fullName || '' },
+            address: {
+                address_line_1: shippingAddress.addressLine1,
+                address_line_2: shippingAddress.addressLine2 || undefined,
+                admin_area_2: shippingAddress.city || '',
+                postal_code: shippingAddress.postcode,
+                country_code: 'GB'
+            }
+        };
+        body.application_context = { shipping_preference: 'SET_PROVIDED_ADDRESS' };
+    }
+
     const response = await fetch(`${getBaseUrl()}/v2/checkout/orders`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-            intent: 'CAPTURE',
-            purchase_units: [{
-                reference_id: referenceId,
-                amount: {
-                    currency_code: 'GBP',
-                    value: amount.toFixed(2)
-                }
-            }]
-        })
+        body: JSON.stringify(body)
     });
 
     const data = await response.json();
