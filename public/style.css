@@ -5254,19 +5254,34 @@ body.product-list-active .search-container {
   max-height: 0;
   overflow: hidden;
   transition: max-height 0.3s ease-in-out;
-  padding-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  padding-left: 0.5rem;
 }
 
 .mobile-nav-accordion.open .mobile-nav-accordion-content {
-  max-height: 500px;
+  max-height: 600px;
   /* Adjust if you have many sub-items */
+  padding-bottom: 0.5rem;
 }
 
-.mobile-nav-accordion-content .sub-item {
-  padding: 0.75rem 0;
-  font-size: 1rem;
-  font-weight: normal;
+.mobile-nav-accordion-content .mega-menu-link {
   display: block;
+  padding: 0.75rem 0.5rem;
+  font-size: 0.95rem;
+  font-weight: normal;
+  color: #4b5563;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.mobile-nav-accordion-content .mega-menu-link:last-child {
+  border-bottom: none;
+}
+
+.mobile-nav-accordion-content .mega-menu-link:hover,
+.mobile-nav-accordion-content .mega-menu-link:active {
+  background-color: #f9fafb;
+  color: var(--primary-color);
 }
 
 /* Style for the Sale menu item */
