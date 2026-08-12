@@ -680,6 +680,70 @@ async function populateProductCategorySelect(selectedValue) {
     }
 }
 
+// ADDED (2026-08-12): the product-card badge color is picked automatically
+// from keywords in the `tag` field's text -- this MIRRORS the exact logic
+// in public/app.js's product-card renderer (search "--- TAGS ---") so the
+// preview in the admin modal matches what shoppers will actually see.
+// Duplicated rather than shared since these run in separate bundles/files
+// (same pattern as createSlug() in api/_lib/seo-helper.js) -- if the real
+// rule ever changes, this needs updating too.
+const TAG_PRESETS = ['BESTSELLER', 'SALE', 'NEW', 'POPULAR'];
+
+function getTagBadgeClass(tagText) {
+    let tagClass = 'product-tag';
+    if (tagText) {
+        const t = tagText.toLowerCase();
+        if (t.includes('sale') || t.includes('offer')) tagClass += ' tag-sale';
+        else if (t.includes('best') || t.includes('popular')) tagClass += ' tag-hot';
+        else if (t.includes('new')) tagClass += ' tag-new';
+    }
+    return tagClass;
+}
+
+function updateTagPreview() {
+    const select = document.getElementById('product-tag');
+    const otherInput = document.getElementById('product-tag-other-input');
+    const preview = document.getElementById('product-tag-preview');
+    const emptyMsg = document.getElementById('product-tag-preview-empty');
+    if (!select || !preview) return;
+
+    const tagText = select.value === '__other__' ? (otherInput ? otherInput.value.trim() : '') : select.value;
+    if (tagText) {
+        preview.textContent = tagText;
+        preview.className = getTagBadgeClass(tagText);
+        preview.style.display = 'inline-block';
+        if (emptyMsg) emptyMsg.style.display = 'none';
+    } else {
+        preview.textContent = '';
+        preview.style.display = 'none';
+        if (emptyMsg) emptyMsg.style.display = '';
+    }
+}
+
+// Sets the Tag dropdown + "Other" input + preview from a stored tag value
+// (edit mode) or blanks it (create mode). Exact-matches against the known
+// presets (case-insensitive); anything else falls back to "Other" with the
+// original text preserved, so an existing custom tag never silently
+// changes or disappears when you open that product to edit something else.
+function setTagFieldValue(tagValue) {
+    const select = document.getElementById('product-tag');
+    const otherInput = document.getElementById('product-tag-other-input');
+    if (!select) return;
+
+    const upper = (tagValue || '').toUpperCase();
+    if (!tagValue) {
+        select.value = '';
+        if (otherInput) { otherInput.classList.add('hidden'); otherInput.value = ''; }
+    } else if (TAG_PRESETS.includes(upper)) {
+        select.value = upper;
+        if (otherInput) { otherInput.classList.add('hidden'); otherInput.value = ''; }
+    } else {
+        select.value = '__other__';
+        if (otherInput) { otherInput.classList.remove('hidden'); otherInput.value = tagValue; }
+    }
+    updateTagPreview();
+}
+
 async function showOrdersToPack() {
     const showAll = document.getElementById('pack-show-all-toggle')?.checked || false;
     let apiUrl = '/api/admin-orders?action=unshipped';
@@ -1213,8 +1277,7 @@ async function openProductModal(item = null) {
             // populateProductCategorySelect(); no direct .value assignment
             // here since the <select>'s options aren't loaded yet at this point.
             
-            // Populate Tags
-            document.getElementById('product-tag').value = item.tag || '';
+            // Populate Tags (dropdown itself set below, step 4.5 -- see setTagFieldValue())
             renderDynamicProductTags(item);
 
             // Populate Descriptions
@@ -1248,11 +1311,13 @@ async function openProductModal(item = null) {
         if (!isComponentMode) renderDynamicProductTags(null);
     }
 
-    // 4.5 Populate Category dropdown (2026-08-12) -- deferred until now so
-    // it works for both edit mode (item.category) and create mode (blank),
-    // in one place. See populateProductCategorySelect().
+    // 4.5 Populate Category dropdown and Tag dropdown+preview (2026-08-12) --
+    // deferred until now so both work for edit mode (item.category/item.tag)
+    // and create mode (blank), in one place. See populateProductCategorySelect()
+    // and setTagFieldValue().
     if (!isComponentMode) {
         await populateProductCategorySelect(item ? (item.category || '') : '');
+        setTagFieldValue(item ? (item.tag || '') : '');
     }
 
     // 5. Render Dynamic Sections
@@ -1680,8 +1745,13 @@ async function performCancellation(payload) {
            // --- TAG READING LOGIC (checkboxes sourced from Search Tags, see renderDynamicProductTags) ---
                 const checkedTags = (category) => Array.from(document.querySelectorAll(`input[name="product-tag-${category}"]:checked`)).map(cb => cb.value);
 
-                // Overwrite the 'tag' field from the payload because the ID changed in HTML
-                payload.tag = document.getElementById('product-tag').value;
+                // ADDED (2026-08-12): tag now comes from a preset dropdown with an
+                // "Other" freeform escape hatch, mirroring the Category field --
+                // see setTagFieldValue()/getTagBadgeClass().
+                const tagSelectVal = document.getElementById('product-tag').value;
+                payload.tag = tagSelectVal === '__other__'
+                    ? document.getElementById('product-tag-other-input').value.trim()
+                    : tagSelectVal;
 
                 // Add the 3 new arrays -- values are constrained to whatever's configured
                 // in Search Tags (admin), so a product can no longer be tagged with a value
@@ -1748,6 +1818,22 @@ if (printPackingSlipBtn) {
             otherInput.value = '';
         }
     });
+    // ADDED (2026-08-12): Tag dropdown + live badge-color preview -- see
+    // getTagBadgeClass()/updateTagPreview()/setTagFieldValue().
+    document.getElementById('product-tag')?.addEventListener('change', (e) => {
+        const otherInput = document.getElementById('product-tag-other-input');
+        if (otherInput) {
+            if (e.target.value === '__other__') {
+                otherInput.classList.remove('hidden');
+                otherInput.focus();
+            } else {
+                otherInput.classList.add('hidden');
+                otherInput.value = '';
+            }
+        }
+        updateTagPreview();
+    });
+    document.getElementById('product-tag-other-input')?.addEventListener('input', updateTagPreview);
     const hamperToggle = document.getElementById('product-hamper-toggle');
     const hamperSection = document.getElementById('hamper-contents-section');
     if (hamperToggle && hamperSection) { hamperToggle.addEventListener('change', () => { hamperSection.style.display = hamperToggle.checked ? 'block' : 'none'; }); }
