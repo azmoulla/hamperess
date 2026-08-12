@@ -688,6 +688,10 @@ video {
   margin-bottom: -1px;
 }
 
+.-mt-4 {
+  margin-top: -1rem;
+}
+
 .mb-1 {
   margin-bottom: 0.25rem;
 }
@@ -850,6 +854,10 @@ video {
 
 .max-h-32 {
   max-height: 8rem;
+}
+
+.max-h-\[90vh\] {
+  max-height: 90vh;
 }
 
 .max-h-full {
@@ -4585,6 +4593,17 @@ body.product-list-active .search-container {
   color: var(--secondary-color);
 }
 
+.contact-map-panel img {
+  width: 100%;
+  height: 100%;
+  -o-object-fit: cover;
+     object-fit: cover;
+  border-radius: var(--border-radius);
+  min-height: 300px;
+}
+
+/* ADDED (2026-08-11): styling for the live embedded map iframe that replaced the static <img>. */
+
 .contact-map-panel {
   min-height: 300px;
 }
@@ -4595,6 +4614,8 @@ body.product-list-active .search-container {
   min-height: 300px;
   border-radius: var(--border-radius);
 }
+
+/* ADDED (2026-08-11): styling for the checkout Terms & Conditions agreement checkbox. */
 
 .checkout-terms-agreement {
   padding-top: 0.5rem;
@@ -4622,7 +4643,7 @@ body.product-list-active .search-container {
   margin-left: 1.5rem;
 }
 
-/* --- FAQ PAGE (2026-08-11): was bare unstyled <details>/<summary> --- */
+/* ADDED (2026-08-11): FAQ page styling -- was bare unstyled <details>/<summary>. */
 
 .faq-intro {
   color: var(--secondary-color);
@@ -4699,7 +4720,7 @@ body.product-list-active .search-container {
   line-height: 1.7;
 }
 
-/* --- DELIVERY INFO PAGE (2026-08-11): was riding on dead Tailwind classes --- */
+/* ADDED (2026-08-11): Delivery Info page styling -- was riding on dead Tailwind classes. */
 
 .delivery-info-list {
   display: flex;
@@ -4745,15 +4766,6 @@ body.product-list-active .search-container {
   line-height: 1.7;
   white-space: pre-line;
   margin: 0;
-}
-
-.contact-map-panel img {
-  width: 100%;
-  height: 100%;
-  -o-object-fit: cover;
-     object-fit: cover;
-  border-radius: var(--border-radius);
-  min-height: 300px;
 }
 
 /* --- CREATE YOUR OWN HAMPER STYLES --- */
