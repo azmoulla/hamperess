@@ -270,7 +270,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         sessionStorage.removeItem('replacementContext');
                     }
                     await Promise.all([
-                        populateProducts(),
+                        // ADDED (2026-08-12): chained (not parallel) with
+                        // populateProducts() specifically, because getCategoryOptions()
+                        // reads allProducts to build its list -- firing it truly in
+                        // parallel could cache an incomplete result (menu categories
+                        // only, missing any legacy/mismatched product category values)
+                        // if it happened to resolve before allProducts was populated,
+                        // and that wrong result would stick for the rest of the
+                        // session (see getCategoryOptions()'s own cache check). This
+                        // still runs concurrently with every other item below, just
+                        // not with populateProducts() itself. Warms the cache during
+                        // initial login load so the product modal's Category dropdown
+                        // doesn't sit on just a placeholder for a couple of seconds
+                        // after clicking Edit/Create. See populateProductCategorySelect().
+                        populateProducts().then(() => getCategoryOptions()),
                         populateComponents(),
                         fetchAllReturns(),
                         fetchAllVouchers(),
@@ -590,6 +603,82 @@ function renderDynamicProductTags(product = null) {
     });
 }
 
+// ADDED (2026-08-12): builds the option list for the product-category
+// dropdown. Sourced from two places, merged and deduped: (1) the site's
+// real menu categories -- the exact `argument` values /category/:name
+// routing and the SEO prerenderer match against (see
+// api/_lib/seo-helper.js productsForCategory()) -- and (2) every category
+// value already in use across existing products, so a legacy/mismatched
+// value never becomes invisible or gets silently discarded when you open
+// that product to edit something unrelated. Cached after first load since
+// the menu rarely changes within a single admin session; call
+// invalidateCategoryOptionsCache() after saving menu changes if a fresher
+// list is ever needed without a full page reload.
+let cachedCategoryOptions = null;
+function invalidateCategoryOptionsCache() { cachedCategoryOptions = null; }
+
+async function getCategoryOptions() {
+    if (cachedCategoryOptions) return cachedCategoryOptions;
+    const menuCats = [];
+    try {
+        const res = await fetch('/api/site-settings?type=menu');
+        if (res.ok) {
+            const rawData = await res.json();
+            const items = Array.isArray(rawData) ? rawData : (rawData.items || []);
+            for (const item of items) {
+                if (item.argument && item.argument !== 'Bestsellers' && item.argument !== '__ALL_PRODUCTS_TRIGGER__') {
+                    menuCats.push(item.argument);
+                }
+                if (item.isMegaMenu && Array.isArray(item.subMenu)) {
+                    for (const sub of item.subMenu) {
+                        if (sub.argument && sub.argument !== '__ALL_PRODUCTS_TRIGGER__') menuCats.push(sub.argument);
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('getCategoryOptions: failed to load menu categories', error);
+    }
+    const productCats = allProducts.map(p => p.category).filter(Boolean);
+    cachedCategoryOptions = [...new Set([...menuCats, ...productCats])].sort((a, b) => a.localeCompare(b));
+    return cachedCategoryOptions;
+}
+
+// Populates the Category <select> in the product modal and handles the
+// "Other" escape hatch for a genuinely new category not in the menu yet
+// (or an existing product whose stored category doesn't match anything
+// known -- pre-fills Other with that value instead of silently dropping
+// it, so saving the form for an unrelated field doesn't quietly change
+// the product's category out from under you).
+async function populateProductCategorySelect(selectedValue) {
+    const select = document.getElementById('product-category-input');
+    const otherInput = document.getElementById('product-category-other-input');
+    if (!select) return;
+
+    const options = await getCategoryOptions();
+    select.innerHTML = '<option value="">-- Select Category --</option>';
+    options.forEach(cat => {
+        const opt = document.createElement('option');
+        opt.value = cat;
+        opt.textContent = cat;
+        select.appendChild(opt);
+    });
+    const otherOpt = document.createElement('option');
+    otherOpt.value = '__other__';
+    otherOpt.textContent = 'Other (type a new category)...';
+    select.appendChild(otherOpt);
+
+    if (selectedValue && options.includes(selectedValue)) {
+        select.value = selectedValue;
+        if (otherInput) { otherInput.classList.add('hidden'); otherInput.value = ''; }
+    } else if (selectedValue) {
+        select.value = '__other__';
+        if (otherInput) { otherInput.classList.remove('hidden'); otherInput.value = selectedValue; }
+    } else {
+        select.value = '';
+        if (otherInput) { otherInput.classList.add('hidden'); otherInput.value = ''; }
+    }
+}
 
 async function showOrdersToPack() {
     const showAll = document.getElementById('pack-show-all-toggle')?.checked || false;
@@ -1072,7 +1161,7 @@ function renderDiscountsTable(discounts) {
    // Global variable to store variants while editing (Ensure this is at the top of your file)
 // let currentProductVariants = []; 
 
-function openProductModal(item = null) {
+async function openProductModal(item = null) {
     if (!productModal || !productForm) return;
 
     // 1. Determine Mode
@@ -1120,7 +1209,9 @@ function openProductModal(item = null) {
             document.getElementById('product-active-toggle').checked = item.isActive !== false;
             document.getElementById('product-hamper-toggle').checked = item.isHamper === true;
             document.getElementById('product-stock-input').value = item.stock;
-            document.getElementById('product-category-input').value = item.category || '';
+            // Category dropdown populated below (step 4.5) -- see
+            // populateProductCategorySelect(); no direct .value assignment
+            // here since the <select>'s options aren't loaded yet at this point.
             
             // Populate Tags
             document.getElementById('product-tag').value = item.tag || '';
@@ -1155,6 +1246,13 @@ function openProductModal(item = null) {
         document.getElementById('product-modal-title').textContent = isComponentMode ? 'Create New Component' : 'Create New Product';
         if (!isComponentMode) document.getElementById('product-active-toggle').checked = true;
         if (!isComponentMode) renderDynamicProductTags(null);
+    }
+
+    // 4.5 Populate Category dropdown (2026-08-12) -- deferred until now so
+    // it works for both edit mode (item.category) and create mode (blank),
+    // in one place. See populateProductCategorySelect().
+    if (!isComponentMode) {
+        await populateProductCategorySelect(item ? (item.category || '') : '');
     }
 
     // 5. Render Dynamic Sections
@@ -1560,8 +1658,24 @@ async function performCancellation(payload) {
             } else {
                 const descriptionBullets = document.getElementById('product-bullets-input').value.split('\n').map(line => line.trim()).filter(Boolean);
                 const isHamper = document.getElementById('product-hamper-toggle').checked;
-                payload = { title: document.getElementById('product-title-input').value, description: descriptionBullets, professionalDescription: document.getElementById('product-description-input').value, price: parseFloat(document.getElementById('product-price-input').value), variants: currentProductVariants, salePrice: parseFloat(document.getElementById('product-saleprice-input').value) || null, rating: parseFloat(document.getElementById('product-rating-input').value) || null, reviewCount: parseInt(document.getElementById('product-reviewcount-input').value, 10) || 0, stock: parseInt(document.getElementById('product-stock-input').value, 10), category: document.getElementById('product-category-input').value, tag: '', imageUrls: document.getElementById('product-images-input').value.split(',').map(url => url.trim()).filter(Boolean), isActive: document.getElementById('product-active-toggle').checked, isHamper: isHamper };
+                // ADDED (2026-08-12): category now comes from a dropdown, with an
+                // "Other" freeform escape hatch -- see populateProductCategorySelect().
+                const categorySelectVal = document.getElementById('product-category-input').value;
+                const resolvedCategory = categorySelectVal === '__other__'
+                    ? document.getElementById('product-category-other-input').value.trim()
+                    : categorySelectVal;
+                if (!resolvedCategory) {
+                    productFormError.textContent = 'Please select a category, or type one under "Other".';
+                    productFormError.classList.remove('hidden');
+                    productFormSpinner.classList.add('hidden');
+                    document.getElementById('product-save-btn').disabled = false;
+                    return;
+                }
+                payload = { title: document.getElementById('product-title-input').value, description: descriptionBullets, professionalDescription: document.getElementById('product-description-input').value, price: parseFloat(document.getElementById('product-price-input').value), variants: currentProductVariants, salePrice: parseFloat(document.getElementById('product-saleprice-input').value) || null, rating: parseFloat(document.getElementById('product-rating-input').value) || null, reviewCount: parseInt(document.getElementById('product-reviewcount-input').value, 10) || 0, stock: parseInt(document.getElementById('product-stock-input').value, 10), category: resolvedCategory, tag: '', imageUrls: document.getElementById('product-images-input').value.split(',').map(url => url.trim()).filter(Boolean), isActive: document.getElementById('product-active-toggle').checked, isHamper: isHamper };
                 if (isHamper) payload.hamperContents = currentHamperContents.map(({ productId, quantity }) => ({ productId, quantity }));
+                // A newly typed "Other" category should be selectable for the
+                // next product edited in this session without a page reload.
+                if (categorySelectVal === '__other__') invalidateCategoryOptionsCache();
             }
            // --- TAG READING LOGIC (checkboxes sourced from Search Tags, see renderDynamicProductTags) ---
                 const checkedTags = (category) => Array.from(document.querySelectorAll(`input[name="product-tag-${category}"]:checked`)).map(cb => cb.value);
@@ -1621,6 +1735,19 @@ if (printPackingSlipBtn) {
 }
 
     document.getElementById('product-modal-cancel-btn')?.addEventListener('click', () => { if (productModal) productModal.classList.add('hidden'); });
+    // ADDED (2026-08-12): reveal/hide the freeform "Other" category input
+    // depending on the dropdown selection -- see populateProductCategorySelect().
+    document.getElementById('product-category-input')?.addEventListener('change', (e) => {
+        const otherInput = document.getElementById('product-category-other-input');
+        if (!otherInput) return;
+        if (e.target.value === '__other__') {
+            otherInput.classList.remove('hidden');
+            otherInput.focus();
+        } else {
+            otherInput.classList.add('hidden');
+            otherInput.value = '';
+        }
+    });
     const hamperToggle = document.getElementById('product-hamper-toggle');
     const hamperSection = document.getElementById('hamper-contents-section');
     if (hamperToggle && hamperSection) { hamperToggle.addEventListener('change', () => { hamperSection.style.display = hamperToggle.checked ? 'block' : 'none'; }); }

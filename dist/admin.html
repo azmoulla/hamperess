@@ -899,6 +899,18 @@
     </div>
         
         <div id="product-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center">
+            <!-- FIX (2026-08-12): this box had no max-height/overflow of its
+                 own, only the backdrop did. With `items-center` on the
+                 backdrop's flexbox, content taller than the viewport gets
+                 vertically centered by overflowing equally off both the top
+                 AND bottom -- and flex's default centering doesn't let you
+                 scroll up to the clipped top portion (a well-known
+                 flex-center-overflow quirk). This form is long (title,
+                 description, price/stock/rating, category, tags, images,
+                 ...) so on most screens the top fields (Title, Description)
+                 were unreachable. Giving the inner box its own max-height +
+                 scroll means it scrolls internally instead of relying on
+                 the backdrop's centering. -->
             <div class="relative mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white max-h-[90vh] overflow-y-auto">
                 <div class="mt-3">
                     <h3 class="text-lg leading-6 font-medium text-gray-900 text-center" id="product-modal-title">Create New Product</h3>
@@ -946,7 +958,17 @@
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label for="product-category-input" class="block text-sm font-medium text-gray-700">Category</label>
-                                <input type="text" id="product-category-input" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                                <!-- CHANGED (2026-08-12): was a freeform text input with nothing to
+                                     guide it -- a typo here (e.g. "Anniversary" vs the real menu
+                                     category "Anniversary Hampers") silently breaks /category/:name
+                                     matching with zero feedback. Now a dropdown populated from the
+                                     site's real menu categories, so a typo is no longer possible.
+                                     See populateProductCategorySelect() in admin.js. -->
+                                <select id="product-category-input" required class="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md">
+                                    <option value="">-- Select Category --</option>
+                                </select>
+                                <p class="text-xs text-gray-400 mt-1">Pulled from your live menu categories -- picking one guarantees this product shows up on its real category page. Use "Other" only for a genuinely new category not in the menu yet.</p>
+                                <input type="text" id="product-category-other-input" placeholder="Type the new category name exactly" class="hidden w-full mt-2 px-3 py-2 border border-gray-300 rounded-md">
                             </div>
                             <div class="form-group">
                                 <label for="product-tag" class="block text-sm font-medium text-gray-700">Tag (e.g., BESTSELLER, SALE)</label>
@@ -1027,7 +1049,7 @@
         <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
         <script src="firebase-config.js"></script> 
         
-        <script type="module" src="admin.js?v=1028"></script>
+        <script type="module" src="admin.js?v=1031"></script>
         
 
         <div id="packing-slip-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 p-4">
