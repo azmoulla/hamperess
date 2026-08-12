@@ -122,26 +122,21 @@ export function flattenMenuCategories(menu) {
     return out;
 }
 
-// Products matching a category `argument`, using the same tag fields the
-// client's manual-match fallback checks (occasionTags/dietaryTags/
-// contentsTags/tag) in public/app.js's checkSmartMatch(). This does not
-// replicate the client's full "Discovery Brain" virtual-tag deep search --
-// that logic is complex and evolves independently of this file, so
-// duplicating it exactly here would be a maintenance trap. This gives a
-// reasonably representative product list for crawlers/meta purposes, which
-// is the actual goal (the live client-rendered grid is still what real
-// visitors see once JS loads).
+// CORRECTED (2026-08-11): originally matched against occasionTags/
+// dietaryTags/contentsTags/tag -- those are for the sidebar chip filters
+// (see checkSmartMatch() in public/app.js), a completely different
+// mechanism from /category/:name routing. Real category matching is done
+// in updateProductView() (public/app.js, "Category Filter" step): it
+// strips one trailing "s" from the whole argument string, lowercases it,
+// and checks whether it's a substring of either p.title or p.category.
+// Ported byte-for-byte so prerendered category pages show exactly the same
+// products the live client-rendered grid would.
 export function productsForCategory(products, argument) {
-    const needle = String(argument).toLowerCase().trim();
-    return products.filter(p => {
-        const tags = [
-            ...(p.occasionTags || []),
-            ...(p.dietaryTags || []),
-            ...(p.contentsTags || []),
-            p.tag
-        ].map(t => String(t || '').toLowerCase());
-        return tags.includes(needle);
-    });
+    const simpleFilter = String(argument).replace(/s$/, '').toLowerCase();
+    return products.filter(p =>
+        (p.title && p.title.toLowerCase().includes(simpleFilter)) ||
+        (p.category && p.category.toLowerCase().includes(simpleFilter))
+    );
 }
 
 export function productImage(product) {
