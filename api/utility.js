@@ -134,12 +134,14 @@ async function handleSitemap(req, res) {
 // canonical/Open Graph/Twitter Card/JSON-LD block plus a genuine content
 // snapshot into the page before it's served.
 //
-// vercel.json only routes requests here when the User-Agent matches a known
-// bot/crawler pattern (see the `has` condition on the /sitemap.xml-adjacent
-// rewrite) -- real visitors keep getting the plain static index.html
-// directly, so there's no added latency/Firestore-read cost on normal
-// human traffic. If that User-Agent match is ever wrong or unsupported in
-// some environment, this handler still degrades gracefully: it just
+// Routing Middleware (middleware.js, project root) only routes requests here
+// when the User-Agent matches a known bot/crawler pattern -- real visitors
+// keep getting the plain static index.html directly, so there's no added
+// latency/Firestore-read cost on normal human traffic. (This used to be a
+// vercel.json `has` header-condition rewrite; switched to middleware.js
+// 2026-08-12 because `has` conditions can't be tested in local `vercel dev`
+// -- middleware can.) If that User-Agent match is ever wrong or unsupported
+// in some environment, this handler still degrades gracefully: it just
 // prerenders for everyone who reaches it, which is slower but not broken.
 async function handleRender(req, res) {
     try {
