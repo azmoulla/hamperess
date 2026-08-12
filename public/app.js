@@ -280,11 +280,8 @@ const CLICK_HANDLERS = [
             // checkbox's HTML in displayCheckoutPage() for context. This
             // covers the discount-covered / no-payment path; the PayPal path
             // is gated separately in renderPayPalButtonsIfPresent()'s onClick.
-            const termsBox = document.getElementById('checkout-terms-agree');
-            if (termsBox && !termsBox.checked) {
-                const err = document.getElementById('checkout-terms-error');
-                if (err) err.style.display = 'block';
-                termsBox.focus();
+            if (!checkoutTermsAgreed()) {
+                showTermsError();
                 return;
             }
             // Now, call the placeOrder function to handle the order logic
@@ -4565,6 +4562,38 @@ function resetFieldState(inputElement) {
     if (errorMsg) errorMsg.style.display = 'none';
 }
 
+// ADDED (2026-08-12): shared Terms & Conditions gate for checkout, used by
+// all three places order placement can be triggered from -- the discount-
+// covered '#place-order-btn' handler, the PayPal Buttons' onClick, and (new)
+// PayPal's createOrder itself. That third one matters because onClick proved
+// unreliable for the "Debit or Credit Card" funding source specifically (see
+// [[project_paypal_card_button_spinner]]) -- when it silently didn't fire,
+// clicking the card button without agreeing to the Terms did nothing
+// visible at all, which is worse than just being confusing: it also meant
+// the terms gate wasn't actually enforced for that path. createOrder is the
+// callback we've confirmed always fires, so it's now a second, reliable
+// checkpoint. showTermsError() adds a red highlight around the checkbox
+// itself (not just the small text below it) since the text alone wasn't
+// noticeable enough.
+function checkoutTermsAgreed() {
+    const termsBox = document.getElementById('checkout-terms-agree');
+    return !termsBox || termsBox.checked;
+}
+function showTermsError() {
+    const termsBox = document.getElementById('checkout-terms-agree');
+    const err = document.getElementById('checkout-terms-error');
+    const wrapper = document.querySelector('.checkout-terms-agreement');
+    if (err) err.style.display = 'block';
+    if (wrapper) wrapper.classList.add('has-error');
+    if (termsBox) termsBox.focus();
+}
+function clearTermsError() {
+    const err = document.getElementById('checkout-terms-error');
+    const wrapper = document.querySelector('.checkout-terms-agreement');
+    if (err) err.style.display = 'none';
+    if (wrapper) wrapper.classList.remove('has-error');
+}
+
 function displayCheckoutPage() {
     if (cart.length === 0) {
         showConfirmationModal("Your shopping basket is empty.");
@@ -4708,10 +4737,7 @@ function displayCheckoutPage() {
     // Clear the "please agree to the Terms" error as soon as the box is
     // checked, rather than leaving it up until the next click attempt.
     document.getElementById('checkout-terms-agree')?.addEventListener('change', (e) => {
-        if (e.target.checked) {
-            const err = document.getElementById('checkout-terms-error');
-            if (err) err.style.display = 'none';
-        }
+        if (e.target.checked) clearTermsError();
     });
 
     document.getElementById('checkout-step1-btn')?.addEventListener('click', () => {
@@ -5212,6 +5238,34 @@ async function renderPayPalButtonsIfPresent() {
         else backLink.removeAttribute('aria-disabled');
     };
 
+    // ADDED (2026-08-12): overlay spinner shown while a payment attempt is
+    // in flight, covering the real gap: our own createOrder() has to
+    // round-trip to /api/paypal before PayPal's card fields expand or its
+    // popup opens, and until now nothing was shown on screen during that
+    // wait, so a slow response looked like a dead click and got tapped
+    // several times. Triggered from createOrder() itself (not onClick) --
+    // confirmed via live testing that createOrder is what reliably fires
+    // for BOTH the gold PayPal button and the black "Debit or Credit Card"
+    // option, whereas onClick's behavior for the card funding source proved
+    // inconsistent in that same testing. See .paypal-click-overlay in the
+    // stylesheet.
+    const showClickOverlay = () => {
+        if (container.querySelector('.paypal-click-overlay')) return;
+        container.style.position = 'relative';
+        const overlay = document.createElement('div');
+        overlay.className = 'paypal-click-overlay';
+        overlay.innerHTML = '<div class="spinner"></div>';
+        container.appendChild(overlay);
+        // Safety net: if neither onApprove, onCancel, nor onError ever fires
+        // (e.g. the buyer closes the popup in a way the SDK doesn't report,
+        // or a network hang), don't leave the buttons permanently stuck
+        // behind the overlay -- clear it automatically after 20s.
+        setTimeout(hideClickOverlay, 20000);
+    };
+    const hideClickOverlay = () => {
+        container.querySelector('.paypal-click-overlay')?.remove();
+    };
+
     setBackLinkDisabled(true);
     container.innerHTML = '<div class="paypal-loading-state"><div class="spinner"></div><p class="text-center text-gray-500 text-sm mt-3">Connecting to PayPal&hellip;</p></div>';
     try {
@@ -5226,25 +5280,54 @@ async function renderPayPalButtonsIfPresent() {
             // PayPal's. Mirrors the same gate on '#place-order-btn' for the
             // discount-covered (no-payment) checkout path.
             onClick: (data, actions) => {
-                const termsBox = document.getElementById('checkout-terms-agree');
-                const err = document.getElementById('checkout-terms-error');
-                if (termsBox && !termsBox.checked) {
-                    if (err) err.style.display = 'block';
-                    termsBox.focus();
+                if (!checkoutTermsAgreed()) {
+                    showTermsError();
                     return actions.reject();
                 }
-                if (err) err.style.display = 'none';
+                clearTermsError();
+                showClickOverlay();
                 return actions.resolve();
             },
             createOrder: async () => {
+                // Also checked here (not just onClick above) -- onClick
+                // proved unreliable for the "Debit or Credit Card" funding
+                // source specifically (see
+                // [[project_paypal_card_button_spinner]]), which meant
+                // clicking it without agreeing to the Terms sometimes did
+                // nothing at all instead of showing the error -- worse than
+                // confusing, since it meant the gate wasn't actually
+                // enforced for that path. createOrder is the callback
+                // that's confirmed to always fire, so it's a second,
+                // reliable checkpoint. Throwing a recognizable error here
+                // (rather than silently rejecting) lets onError below tell
+                // this case apart from a real API failure.
+                if (!checkoutTermsAgreed()) {
+                    showTermsError();
+                    throw new Error('TERMS_NOT_AGREED');
+                }
+                clearTermsError();
+                // Also shown here (not just onClick above) -- this is the
+                // callback that's actually guaranteed to run for every
+                // funding source, so the overlay is guaranteed to appear
+                // even if a given funding source's click doesn't route
+                // through onClick the same way. showClickOverlay() is a
+                // no-op if it's already showing.
+                showClickOverlay();
                 try {
                     const { orderPayload } = buildOrderPayloadForPayPal();
                     const result = await postJsonMaybeAuth('/api/paypal?action=create-order', { orderPayload });
+                    // Hide as soon as we have an order id -- for the gold
+                    // PayPal button, focus is about to move to its popup
+                    // anyway; for the black card button, PayPal is about to
+                    // expand its inline card fields right where our overlay
+                    // sits, and those fields must be clickable, not covered.
+                    hideClickOverlay();
                     return result.paypalOrderId;
                 } catch (error) {
                     // Surface our own validation/API error message rather than
                     // letting the PayPal SDK swallow it into a generic one.
                     console.error('PayPal createOrder failed:', error);
+                    hideClickOverlay();
                     showConfirmationModal(`Order Failed: ${error.message}`);
                     throw error;
                 }
@@ -5264,9 +5347,18 @@ async function renderPayPalButtonsIfPresent() {
             },
             onCancel: () => {
                 // Buyer closed the PayPal popup without approving -- leave
-                // them on the review step so they can try again.
+                // them on the review step so they can try again. Remove the
+                // click overlay so the buttons are clickable again.
+                hideClickOverlay();
             },
             onError: (error) => {
+                hideClickOverlay();
+                // The terms-not-agreed case throws from createOrder on
+                // purpose to stop PayPal's flow -- it's not a real failure,
+                // the red highlight + inline message already told the buyer
+                // what to do, so don't also pop the generic "something went
+                // wrong" modal on top of that.
+                if (error?.message === 'TERMS_NOT_AGREED') return;
                 // Log everything enumerable on the error object, not just
                 // its default string form -- PayPal's SDK errors often carry
                 // extra detail (name, message, and sometimes a nested
