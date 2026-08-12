@@ -3195,10 +3195,12 @@ function showPage(pageId) {
 }
 function openMobileMenu() {
     mobileNavOverlay.classList.add('active');
+    document.body.style.overflow = 'hidden'; // Prevent background scrolling
 }
 
 function closeMobileMenu() {
     mobileNavOverlay.classList.remove('active');
+    document.body.style.overflow = '';
 }
 
 // REPLACE this function in your public/app.js file
